@@ -61,12 +61,13 @@ impl From<OpCode> for Instruction {
 
 #[derive(Debug, Copy, Clone)]
 enum AddressingMode {
-    IndexedIndirect,
+    None,
+    IndirectX,
     Zeropage,
     Immediate,
     Absolute,
-    IndirectIndexed,
-    ZeroPageIndexed,
+    IndirectY,
+    ZeroPageX,
     AbsoluteY,
     AbsoluteX,
     Accumulator,
@@ -75,16 +76,16 @@ enum AddressingMode {
 impl From<OpCode> for AddressingMode {
     fn from(opcode: OpCode) -> Self {
         let cc = opcode.0 & 0x3;
-        let bbb = (opcode.0 >> 2) & 0x3;
+        let bbb = (opcode.0 >> 2) & 0x7;
 
         match cc {
             0x01 => match bbb {
-                0x00 => AddressingMode::IndexedIndirect,
+                0x00 => AddressingMode::IndirectX,
                 0x01 => AddressingMode::Zeropage,
                 0x02 => AddressingMode::Immediate,
                 0x03 => AddressingMode::Absolute,
-                0x04 => AddressingMode::IndirectIndexed,
-                0x05 => AddressingMode::ZeroPageIndexed,
+                0x04 => AddressingMode::IndirectY,
+                0x05 => AddressingMode::ZeroPageX,
                 0x06 => AddressingMode::AbsoluteY,
                 0x07 => AddressingMode::AbsoluteX,
                 _ => panic!("invalid addressing mode, opcode: {:?}", opcode),
@@ -94,7 +95,7 @@ impl From<OpCode> for AddressingMode {
                 0x01 => AddressingMode::Zeropage,
                 0x02 => AddressingMode::Accumulator,
                 0x03 => AddressingMode::Absolute,
-                0x05 => AddressingMode::ZeroPageIndexed,
+                0x05 => AddressingMode::ZeroPageX,
                 0x07 => AddressingMode::AbsoluteX,
                 _ => panic!("invalid addressing mode, opcode: {:?}", opcode),
             },
@@ -107,7 +108,11 @@ impl From<OpCode> for AddressingMode {
 enum CpuState {
     FetchOpCode,
     FetchValue0,
+    FetchValue1(Option<u8>),
     ZeroPage,
+    ZeroPageX,
+    Absolute,
+    PageCrossing,
     Instruction,
 }
 
@@ -122,6 +127,7 @@ pub struct Cpu {
     mem: [u8; 0xFFFF],
     state: CpuState,
     opcode: OpCode,
+    addressing_mode: AddressingMode,
     value0: u8,
     value1: u8,
 }
@@ -137,6 +143,7 @@ impl Cpu {
             p: Flags::from_bits(P_INIT_VALUE).unwrap(),
             mem: [0; 0xFFFF],
             state: CpuState::FetchOpCode,
+            addressing_mode: AddressingMode::None,
             opcode: OpCode(0),
             value0: 0,
             value1: 0,
@@ -152,14 +159,50 @@ impl Cpu {
                 self.value0 = self.read_mem(self.pc);
                 // FIXME: what if PC wraps?
                 self.pc += 1;
-                match AddressingMode::from(self.opcode) {
-                    AddressingMode::Immediate => self.state = CpuState::Instruction,
-                    AddressingMode::Zeropage => self.state = CpuState::ZeroPage,
+                self.addressing_mode = AddressingMode::from(self.opcode);
+                self.state = match self.addressing_mode {
+                    AddressingMode::IndirectX => todo!(),
+                    AddressingMode::Zeropage => CpuState::ZeroPage,
+                    AddressingMode::Immediate => CpuState::Instruction,
+                    AddressingMode::Absolute => CpuState::FetchValue1(None),
+                    AddressingMode::IndirectY => todo!(),
+                    AddressingMode::ZeroPageX => CpuState::ZeroPageX,
+                    AddressingMode::AbsoluteY => CpuState::FetchValue1(Some(self.y)),
+                    AddressingMode::AbsoluteX => CpuState::FetchValue1(Some(self.x)),
                     _ => todo!(),
-                }
+                };
+            }
+            CpuState::FetchValue1(index) => {
+                self.value1 = self.read_mem(self.pc);
+                self.pc += 1;
+                self.state = match index {
+                    Some(register) => {
+                        let (value, pagebound_crossed) = self.value0.overflowing_add(register);
+                        self.value0 = value;
+                        if pagebound_crossed {
+                            CpuState::PageCrossing
+                        } else {
+                            CpuState::Absolute
+                        }
+                    }
+                    None => CpuState::Absolute,
+                };
             }
             CpuState::ZeroPage => {
                 self.value0 = self.read_mem(self.value0 as u16);
+                self.state = CpuState::Instruction;
+            }
+            CpuState::ZeroPageX => {
+                self.value0 = self.value0.wrapping_add(self.x);
+                self.state = CpuState::ZeroPage;
+            }
+            CpuState::PageCrossing => {
+                self.value1 = self.value1.wrapping_add(1);
+                self.state = CpuState::Absolute;
+            }
+            CpuState::Absolute => {
+                let address = self.value1 as u16 >> 8 | self.value0 as u16;
+                self.value0 = self.read_mem(address);
                 self.state = CpuState::Instruction;
             }
             CpuState::Instruction => {
