@@ -113,6 +113,9 @@ enum CpuState {
     ZeroPageX,
     Absolute,
     PageCrossing,
+    IndirectX0,
+    IndirectX1,
+    IndirectX2,
     Instruction,
 }
 
@@ -151,17 +154,17 @@ impl Cpu {
     }
 
     pub fn tick(&mut self) {
-        match self.state {
+        self.state = match self.state {
             CpuState::FetchOpCode => {
-                self.fetch_opcode();
+                self.fetch_opcode()
             }
             CpuState::FetchValue0 => {
                 self.value0 = self.read_mem(self.pc);
                 // FIXME: what if PC wraps?
                 self.pc += 1;
                 self.addressing_mode = AddressingMode::from(self.opcode);
-                self.state = match self.addressing_mode {
-                    AddressingMode::IndirectX => todo!(),
+                match self.addressing_mode {
+                    AddressingMode::IndirectX => CpuState::IndirectX0,
                     AddressingMode::Zeropage => CpuState::ZeroPage,
                     AddressingMode::Immediate => CpuState::Instruction,
                     AddressingMode::Absolute => CpuState::FetchValue1(None),
@@ -170,12 +173,12 @@ impl Cpu {
                     AddressingMode::AbsoluteY => CpuState::FetchValue1(Some(self.y)),
                     AddressingMode::AbsoluteX => CpuState::FetchValue1(Some(self.x)),
                     _ => todo!(),
-                };
+                }
             }
             CpuState::FetchValue1(index) => {
                 self.value1 = self.read_mem(self.pc);
                 self.pc += 1;
-                self.state = match index {
+                match index {
                     Some(register) => {
                         let (value, pagebound_crossed) = self.value0.overflowing_add(register);
                         self.value0 = value;
@@ -186,45 +189,52 @@ impl Cpu {
                         }
                     }
                     None => CpuState::Absolute,
-                };
+                }
             }
             CpuState::ZeroPage => {
                 self.value0 = self.read_mem(self.value0 as u16);
-                self.state = CpuState::Instruction;
+                CpuState::Instruction
             }
             CpuState::ZeroPageX => {
                 self.value0 = self.value0.wrapping_add(self.x);
-                self.state = CpuState::ZeroPage;
+                CpuState::ZeroPage
             }
             CpuState::PageCrossing => {
                 self.value1 = self.value1.wrapping_add(1);
-                self.state = CpuState::Absolute;
+                CpuState::Absolute
             }
             CpuState::Absolute => {
                 let address = (self.value1 as u16) << 8 | self.value0 as u16;
                 self.value0 = self.read_mem(address);
-                self.state = CpuState::Instruction;
+                CpuState::Instruction
+            }
+            CpuState::IndirectX0 => {
+                self.value0 = self.value0.wrapping_add(self.x);
+                CpuState::IndirectX1
+            }
+            CpuState::IndirectX1 => {
+                self.value1 = self.value0.wrapping_add(1);
+                self.value0 = self.read_mem(self.value0 as u16);
+                CpuState::IndirectX2
+            }
+            CpuState::IndirectX2 => {
+                self.value1 = self.read_mem(self.value1 as u16);
+                CpuState::Absolute
             }
             CpuState::Instruction => {
                 match Instruction::from(self.opcode) {
                     Instruction::And => self.and(),
                     _ => todo!(),
                 };
+                self.fetch_opcode()
             }
-        }
+        };
     }
 
     pub fn reset(&mut self) {
         // TODO initialize other registers
         self.pc = self.read_mem_u16(RESET_VECTOR);
         self.state = CpuState::FetchOpCode;
-    }
-
-    fn fetch_opcode(&mut self) {
-        self.opcode = OpCode(self.read_mem(self.pc));
-        // FIXME: what if PC wraps?
-        self.pc += 1;
-        self.state = CpuState::FetchValue0;
     }
 
     fn read_mem(&self, address: u16) -> u8 {
@@ -252,6 +262,13 @@ impl Cpu {
             .for_each(|(dest, src)| *dest = *src);
     }
 
+    fn fetch_opcode(&mut self) -> CpuState {
+        self.opcode = OpCode(self.read_mem(self.pc));
+        // FIXME: what if PC wraps?
+        self.pc += 1;
+        CpuState::FetchValue0
+    }
+
     fn set_zero_and_negative_flags(&mut self) {
         self.p.set(Flags::Z, self.a == 0);
         self.p.set(Flags::N, self.a & 0x80 != 0);
@@ -260,7 +277,6 @@ impl Cpu {
     fn and(&mut self) {
         self.a = self.a & self.value0;
         self.set_zero_and_negative_flags();
-        self.fetch_opcode();
     }
 }
 
@@ -426,6 +442,29 @@ mod tests {
         cpu.tick(); // execute and and fetch the next opcode at the same time
         assert_eq!(cpu.a, 0xf3);
         assert!(cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+    }
+
+    #[test]
+    fn and_indirect_x() {
+        let mut cpu = setup(&[
+            0x21, 0x16, // AND ($16,X)
+        ]);
+
+        cpu.a = 0xff;
+        cpu.x = 0x04;
+        cpu.write_mem_u16(0x1a, 0x2442);
+        cpu.write_mem(0x2442, 0x32);
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch address's address
+        cpu.tick(); // add x to address's address
+        cpu.tick(); // fetch low byte address and increment address's address at the same time
+        cpu.tick(); // fetch high byte address
+        cpu.tick(); // fetch operand
+        assert_eq!(cpu.a, 0xff);
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x32);
+        assert!(!cpu.p.contains(Flags::N));
         assert!(!cpu.p.contains(Flags::Z));
     }
 }
