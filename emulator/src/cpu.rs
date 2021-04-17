@@ -235,6 +235,7 @@ impl Cpu {
             CpuState::Instruction => {
                 match Instruction::from(self.opcode) {
                     Instruction::And => self.and(),
+                    Instruction::Eor => self.eor(),
                     Instruction::Ora => self.ora(),
                     _ => todo!(),
                 };
@@ -292,6 +293,11 @@ impl Cpu {
 
     fn and(&mut self) {
         self.a = self.a & self.value0;
+        self.set_zero_and_negative_flags();
+    }
+
+    fn eor(&mut self) {
+        self.a = self.a ^ self.value0;
         self.set_zero_and_negative_flags();
     }
 
@@ -527,6 +533,27 @@ mod tests {
         assert_eq!(cpu.a, 0xf4);
         assert!(cpu.p.contains(Flags::N));
         assert!(!cpu.p.contains(Flags::Z));
+    }
+
+    #[test]
+    fn eor() {
+        let mut cpu = setup(&[
+            0x49, 0xaa, // EOR #$aa
+            0x49, 0xaa, // EOR #$aa
+        ]);
+        cpu.a = 0x00;
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0xaa);
+        assert!(cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and fetch next opcode
+        assert_eq!(cpu.a, 0x00);
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(cpu.p.contains(Flags::Z));
     }
 
     #[test]
