@@ -201,7 +201,7 @@ impl Cpu {
                 self.state = CpuState::Absolute;
             }
             CpuState::Absolute => {
-                let address = self.value1 as u16 >> 8 | self.value0 as u16;
+                let address = (self.value1 as u16) << 8 | self.value0 as u16;
                 self.value0 = self.read_mem(address);
                 self.state = CpuState::Instruction;
             }
@@ -268,16 +268,24 @@ impl Cpu {
 mod tests {
     use super::*;
     const RAM_CODE_START: u16 = 0x400;
-    #[test]
-    fn and() {
+
+    fn setup(instructions: &[u8]) -> Cpu {
         let mut cpu = Cpu::new();
-        cpu.a = 0xff;
         cpu.write_mem_u16(RESET_VECTOR, RAM_CODE_START);
-        let instructions = [0x29, 0xaa, 0x29, 0x55, 0x25, 0x16];
         instructions.iter().enumerate().for_each(|(index, value)| {
             cpu.write_mem(RAM_CODE_START + index as u16, *value);
         });
         cpu.reset();
+        cpu
+    }
+
+    #[test]
+    fn and_immediate() {
+        let mut cpu = setup(&[
+            0x29, 0xaa, // AND #$aa
+            0x29, 0x55, // AND #$55
+        ]);
+        cpu.a = 0xff;
         cpu.tick(); // fetch opcode
         cpu.tick(); // fetch operand
         assert_eq!(cpu.a, 0xff);
@@ -293,15 +301,131 @@ mod tests {
         assert_eq!(cpu.a, 0x00);
         assert!(!cpu.p.contains(Flags::N));
         assert!(cpu.p.contains(Flags::Z));
+    }
 
-        cpu.a = 0x0f;
-        cpu.write_mem(0x16, 0x2);
+    #[test]
+    fn and_zero_page() {
+        let mut cpu = setup(&[
+            0x25, 0x16, // AND $16
+        ]);
+        cpu.a = 0xff;
+        cpu.write_mem(0x16, 0x55);
+        cpu.tick(); // fetch opcode
         cpu.tick(); // fetch address
-        cpu.tick(); // fetch operand from memory
-        assert_ne!(cpu.a, 0x02);
-        cpu.tick(); // execute and fetch next opcode
-        assert_eq!(cpu.a, 0x02);
+        assert_eq!(cpu.a, 0xff);
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x55);
         assert!(!cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+    }
+
+    #[test]
+    fn and_zero_page_x() {
+        let mut cpu = setup(&[
+            0x35, 0x16, // AND $16,X
+        ]);
+        cpu.a = 0xff;
+        cpu.x = 0x02;
+        cpu.write_mem(0x18, 0x53);
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch address
+        cpu.tick(); // add X to the address
+        cpu.tick(); // fetch operand
+        assert_eq!(cpu.a, 0xff);
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x53);
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+    }
+
+    #[test]
+    fn and_absolute() {
+        let mut cpu = setup(&[
+            0x2D, 0x16, 0x22, // AND $2216
+        ]);
+        cpu.a = 0xff;
+        cpu.write_mem(0x2216, 0xf5);
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch address low byte
+        cpu.tick(); // fetch address high byte
+        cpu.tick(); // fetch operand
+        assert_eq!(cpu.a, 0xff);
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0xf5);
+        assert!(cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+    }
+
+    #[test]
+    fn and_absolute_y() {
+        let mut cpu = setup(&[
+            0x39, 0x16, 0x22, // AND $2216,Y
+            0x39, 0x16, 0x22, // AND $2216,Y
+        ]);
+
+        // no page bound crossing
+        cpu.a = 0xff;
+        cpu.y = 0x04;
+        cpu.write_mem(0x221a, 0x65);
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch address low byte
+        cpu.tick(); // fetch address high byte and add y to the low address byte
+        cpu.tick(); // fetch operand
+        assert_eq!(cpu.a, 0xff);
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x65);
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+
+        // page bound crossing
+        cpu.a = 0xff;
+        cpu.y = 0xf0;
+        cpu.write_mem(0x2306, 0xf3);
+        cpu.tick(); // fetch address low byte
+        cpu.tick(); // fetch address high byte and add y to the low address byte, page bound cross detected
+        cpu.tick(); // add 1 to the address high byte
+        cpu.tick(); // fetch operand
+        assert_eq!(cpu.a, 0xff);
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0xf3);
+        assert!(cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+    }
+
+    #[test]
+    fn and_absolute_x() {
+        let mut cpu = setup(&[
+            0x3D, 0x16, 0x22, // AND $2216,X
+            0x3D, 0x16, 0x22, // AND $2216,X
+        ]);
+
+        // no page bound crossing
+        cpu.a = 0xff;
+        cpu.x = 0x04;
+        cpu.write_mem(0x221a, 0x65);
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch address low byte
+        cpu.tick(); // fetch address high byte and add x to the low address byte
+        cpu.tick(); // fetch operand
+        assert_eq!(cpu.a, 0xff);
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x65);
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+
+        // page bound crossing
+        cpu.a = 0xff;
+        cpu.x = 0xf0;
+        cpu.write_mem(0x2306, 0xf3);
+        cpu.tick(); // fetch address low byte
+        cpu.tick(); // fetch address high byte and add x to the low address byte, page bound cross detected
+        cpu.tick(); // add 1 to the address high byte
+        cpu.tick(); // fetch operand
+        assert_eq!(cpu.a, 0xff);
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0xf3);
+        assert!(cpu.p.contains(Flags::N));
         assert!(!cpu.p.contains(Flags::Z));
     }
 }
