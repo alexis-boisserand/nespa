@@ -116,6 +116,8 @@ enum CpuState {
     IndirectX0,
     IndirectX1,
     IndirectX2,
+    IndirectY0,
+    IndirectY1,
     Instruction,
 }
 
@@ -130,7 +132,6 @@ pub struct Cpu {
     mem: [u8; 0xFFFF],
     state: CpuState,
     opcode: OpCode,
-    addressing_mode: AddressingMode,
     value0: u8,
     value1: u8,
 }
@@ -146,7 +147,6 @@ impl Cpu {
             p: Flags::from_bits(P_INIT_VALUE).unwrap(),
             mem: [0; 0xFFFF],
             state: CpuState::FetchOpCode,
-            addressing_mode: AddressingMode::None,
             opcode: OpCode(0),
             value0: 0,
             value1: 0,
@@ -155,20 +155,16 @@ impl Cpu {
 
     pub fn tick(&mut self) {
         self.state = match self.state {
-            CpuState::FetchOpCode => {
-                self.fetch_opcode()
-            }
+            CpuState::FetchOpCode => self.fetch_opcode(),
             CpuState::FetchValue0 => {
                 self.value0 = self.read_mem(self.pc);
-                // FIXME: what if PC wraps?
                 self.increment_pc();
-                self.addressing_mode = AddressingMode::from(self.opcode);
-                match self.addressing_mode {
+                match AddressingMode::from(self.opcode) {
                     AddressingMode::IndirectX => CpuState::IndirectX0,
                     AddressingMode::Zeropage => CpuState::ZeroPage,
                     AddressingMode::Immediate => CpuState::Instruction,
                     AddressingMode::Absolute => CpuState::FetchValue1(None),
-                    AddressingMode::IndirectY => todo!(),
+                    AddressingMode::IndirectY => CpuState::IndirectY0,
                     AddressingMode::ZeroPageX => CpuState::ZeroPageX,
                     AddressingMode::AbsoluteY => CpuState::FetchValue1(Some(self.y)),
                     AddressingMode::AbsoluteX => CpuState::FetchValue1(Some(self.x)),
@@ -220,6 +216,21 @@ impl Cpu {
             CpuState::IndirectX2 => {
                 self.value1 = self.read_mem(self.value1 as u16);
                 CpuState::Absolute
+            }
+            CpuState::IndirectY0 => {
+                self.value1 = self.value0.wrapping_add(1);
+                self.value0 = self.read_mem(self.value0 as u16);
+                CpuState::IndirectY1
+            }
+            CpuState::IndirectY1 => {
+                self.value1 = self.read_mem(self.value1 as u16);
+                let (value, pagebound_crossed) = self.value0.overflowing_add(self.y);
+                self.value0 = value;
+                if pagebound_crossed {
+                    CpuState::PageCrossing
+                } else {
+                    CpuState::Absolute
+                }
             }
             CpuState::Instruction => {
                 match Instruction::from(self.opcode) {
@@ -469,6 +480,46 @@ mod tests {
         cpu.tick(); // execute and and fetch the next opcode at the same time
         assert_eq!(cpu.a, 0x32);
         assert!(!cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+    }
+
+    #[test]
+    fn and_indirect_y() {
+        let mut cpu = setup(&[
+            0x31, 0x26, // AND ($16),Y
+            0x31, 0x26, // AND ($16),Y
+        ]);
+
+        // no page bound crossing
+        cpu.a = 0xff;
+        cpu.y = 0x04;
+        cpu.write_mem_u16(0x26, 0x2244);
+        cpu.write_mem(0x2248, 0x21);
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch address's address
+        cpu.tick(); // fetch address low byte
+        cpu.tick(); // fetch address high byte and add x to the low address byte
+        cpu.tick(); // fetch operand
+        assert_eq!(cpu.a, 0xff);
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x21);
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+
+        // page bound crossing
+        cpu.a = 0xff;
+        cpu.y = 0x06;
+        cpu.write_mem_u16(0x26, 0x22fe);
+        cpu.write_mem(0x2304, 0xf4);
+        cpu.tick(); // fetch address's address
+        cpu.tick(); // fetch address low byte
+        cpu.tick(); // fetch address high byte and add x to the low address byte, page bound cross detected
+        cpu.tick(); // add 1 to the address high byte
+        cpu.tick(); // fetch operand
+        assert_eq!(cpu.a, 0xff);
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0xf4);
+        assert!(cpu.p.contains(Flags::N));
         assert!(!cpu.p.contains(Flags::Z));
     }
 }
