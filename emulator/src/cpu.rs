@@ -161,7 +161,7 @@ impl Cpu {
             CpuState::FetchValue0 => {
                 self.value0 = self.read_mem(self.pc);
                 // FIXME: what if PC wraps?
-                self.pc += 1;
+                self.increment_pc();
                 self.addressing_mode = AddressingMode::from(self.opcode);
                 match self.addressing_mode {
                     AddressingMode::IndirectX => CpuState::IndirectX0,
@@ -177,7 +177,7 @@ impl Cpu {
             }
             CpuState::FetchValue1(index) => {
                 self.value1 = self.read_mem(self.pc);
-                self.pc += 1;
+                self.increment_pc();
                 match index {
                     Some(register) => {
                         let (value, pagebound_crossed) = self.value0.overflowing_add(register);
@@ -264,9 +264,13 @@ impl Cpu {
 
     fn fetch_opcode(&mut self) -> CpuState {
         self.opcode = OpCode(self.read_mem(self.pc));
-        // FIXME: what if PC wraps?
-        self.pc += 1;
+        self.increment_pc();
         CpuState::FetchValue0
+    }
+
+    fn increment_pc(&mut self) {
+        // FIXME: not sure about this
+        self.pc = self.pc.wrapping_add(1);
     }
 
     fn set_zero_and_negative_flags(&mut self) {
