@@ -234,6 +234,7 @@ impl Cpu {
             }
             CpuState::Instruction => {
                 match Instruction::from(self.opcode) {
+                    Instruction::Adc => self.adc(),
                     Instruction::And => self.and(),
                     Instruction::Eor => self.eor(),
                     Instruction::Ora => self.ora(),
@@ -291,6 +292,17 @@ impl Cpu {
         self.p.set(Flags::N, self.a & 0x80 != 0);
     }
 
+    fn adc(&mut self) {
+        let a = self.a as u16;
+        let m = self.value0 as u16 + self.p.contains(Flags::C) as u16;
+        let value = a + m;
+        self.a = (a + m) as u8;
+        self.p
+            .set(Flags::V, (a ^ value) & (m ^ value) & 0x0080 != 0);
+        self.p.set(Flags::C, value & 0x0100 != 0);
+        self.set_zero_and_negative_flags();
+    }
+
     fn and(&mut self) {
         self.a = self.a & self.value0;
         self.set_zero_and_negative_flags();
@@ -320,6 +332,74 @@ mod tests {
         });
         cpu.reset();
         cpu
+    }
+
+    #[test]
+    fn adc() {
+        // test Z, N and C flags
+        let mut cpu = setup(&[
+            0x69, 0x00, // ADC #$00
+            0x69, 0xe0, // ADC #$e0
+            0x69, 0x20, // ADC #$20
+            0x69, 0xff, // ADC #$ff
+        ]);
+        cpu.a = 0x00;
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x00);
+        assert!(cpu.p.contains(Flags::Z));
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::V));
+        assert!(!cpu.p.contains(Flags::C));
+
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0xe0);
+        assert!(!cpu.p.contains(Flags::Z));
+        assert!(cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::V));
+        assert!(!cpu.p.contains(Flags::C));
+
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x00);
+        assert!(cpu.p.contains(Flags::Z));
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::V));
+        assert!(cpu.p.contains(Flags::C));
+
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x00);
+        assert!(cpu.p.contains(Flags::Z));
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::V));
+        assert!(cpu.p.contains(Flags::C));
+
+        // test V flag
+        let mut cpu = setup(&[
+            0x69, 0x44, // ADC #$44 with a set to 0x42
+            0x69, 0xd0, // ADC #$d0 with a set to 0x90
+        ]);
+        cpu.a = 0x42;
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x86);
+        assert!(!cpu.p.contains(Flags::Z));
+        assert!(cpu.p.contains(Flags::N));
+        assert!(cpu.p.contains(Flags::V));
+        assert!(!cpu.p.contains(Flags::C));
+
+        cpu.a = 0x90;
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x60);
+        assert!(!cpu.p.contains(Flags::Z));
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(cpu.p.contains(Flags::V));
+        assert!(cpu.p.contains(Flags::C));
     }
 
     #[test]
