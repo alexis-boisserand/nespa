@@ -61,7 +61,6 @@ impl From<OpCode> for Instruction {
 
 #[derive(Debug, Copy, Clone)]
 enum AddressingMode {
-    None,
     IndirectX,
     Zeropage,
     Immediate,
@@ -238,6 +237,7 @@ impl Cpu {
                     Instruction::And => self.and(),
                     Instruction::Eor => self.eor(),
                     Instruction::Ora => self.ora(),
+                    Instruction::Sbc => self.sbc(),
                     _ => todo!(),
                 };
                 self.fetch_opcode()
@@ -296,7 +296,7 @@ impl Cpu {
         let a = self.a as u16;
         let m = self.value0 as u16 + self.p.contains(Flags::C) as u16;
         let value = a + m;
-        self.a = (a + m) as u8;
+        self.a = value as u8;
         self.p
             .set(Flags::V, (a ^ value) & (m ^ value) & 0x0080 != 0);
         self.p.set(Flags::C, value & 0x0100 != 0);
@@ -315,6 +315,32 @@ impl Cpu {
 
     fn ora(&mut self) {
         self.a = self.a | self.value0;
+        self.set_zero_and_negative_flags();
+    }
+
+    fn sbc(&mut self) {
+        let a = self.a as u16;
+        let m = self.value0 as u16 + 1 - (self.p.contains(Flags::C) as u16);
+        let value = a.wrapping_sub(m);
+        self.a = value as u8;
+        // overflow if result > 127 or < -128
+        // positive - negative -> positive overflow
+        // positive - positive -> no overflow
+        // negative - negative -> no overflow
+        // negative - positive -> negative overflow
+        //
+        // overflow if (positive - negative -> negative) || (negative - positive -> positive)
+        //
+        // which can be translated to:
+        // ((a & !m & !value) | (!a & m & value)) & 0x0080
+        // 
+        // which can be simplified to:
+        // (a ^ m) & (a ^ value) & 0x0080
+        self.p.set(
+            Flags::V,
+            (a ^ m) & (a ^ value) & 0x0080 != 0
+        );
+        self.p.set(Flags::C, value & 0x0100 == 0);
         self.set_zero_and_negative_flags();
     }
 }
@@ -662,5 +688,93 @@ mod tests {
         assert_eq!(cpu.a, 0xff);
         assert!(cpu.p.contains(Flags::N));
         assert!(!cpu.p.contains(Flags::Z));
+    }
+
+    #[test]
+    fn sbc() {
+        // test Z, N and C flags
+        let mut cpu = setup(&[
+            0xe9, 0x00, // SBC #$00
+            0xe9, 0x02, // SBC #$02 with a set to 0x0a
+            0xe9, 0x30, // SBC #$20 with a set to 0x20
+            // try 0x4521 - 0x4434 = 0xed
+            0xe9, 0x34, // SBC #$34 with a set to 21
+            0xe9, 0x44, // SBC #$44 with a set to 45
+        ]);
+        cpu.a = 0x00;
+        cpu.p.set(Flags::C, true);
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x00);
+        assert!(cpu.p.contains(Flags::Z));
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::V));
+        assert!(cpu.p.contains(Flags::C));
+
+        cpu.a = 0x0a;
+        cpu.p.set(Flags::C, true);
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x08);
+        assert!(!cpu.p.contains(Flags::Z));
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::V));
+        assert!(cpu.p.contains(Flags::C));
+
+        cpu.a = 0x20;
+        cpu.p.set(Flags::C, true);
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0xf0);
+        assert!(!cpu.p.contains(Flags::Z));
+        assert!(cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::V));
+        assert!(!cpu.p.contains(Flags::C));
+
+        cpu.a = 0x21;
+        cpu.p.set(Flags::C, true);
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0xed);
+        assert!(!cpu.p.contains(Flags::Z));
+        assert!(cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::V));
+        assert!(!cpu.p.contains(Flags::C));
+
+        cpu.a = 0x45;
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x00);
+        assert!(cpu.p.contains(Flags::Z));
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::V));
+        assert!(cpu.p.contains(Flags::C));
+
+        // test V flag
+        let mut cpu = setup(&[
+            0xe9, 0xb0, // SBC #$b0 with a set to 0x50
+            0xe9, 0x70, // SBC #$d0 with a set to 0xd0
+        ]);
+        cpu.p.set(Flags::C, true);
+        cpu.a = 0x50;
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0xa0);
+        assert!(!cpu.p.contains(Flags::Z));
+        assert!(cpu.p.contains(Flags::N));
+        assert!(cpu.p.contains(Flags::V));
+        assert!(!cpu.p.contains(Flags::C));
+
+        cpu.p.set(Flags::C, true);
+        cpu.a = 0xd0;
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x60);
+        assert!(!cpu.p.contains(Flags::Z));
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(cpu.p.contains(Flags::V));
+        assert!(cpu.p.contains(Flags::C));
     }
 }
