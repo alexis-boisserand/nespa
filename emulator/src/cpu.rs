@@ -236,6 +236,7 @@ impl Cpu {
                     Instruction::Adc => self.adc(),
                     Instruction::And => self.and(),
                     Instruction::Eor => self.eor(),
+                    Instruction::Lda => self.lda(),
                     Instruction::Ora => self.ora(),
                     Instruction::Sbc => self.sbc(),
                     _ => todo!(),
@@ -287,42 +288,42 @@ impl Cpu {
         self.pc = self.pc.wrapping_add(1);
     }
 
-    fn set_zero_and_negative_flags(&mut self) {
-        self.p.set(Flags::Z, self.a == 0);
-        self.p.set(Flags::N, self.a & 0x80 != 0);
+    fn set_a(&mut self, value: u8) {
+        self.p.set(Flags::Z, value == 0);
+        self.p.set(Flags::N, value & 0x80 != 0);
+        self.a = value;
     }
 
     fn adc(&mut self) {
         let a = self.a as u16;
         let m = self.value0 as u16 + self.p.contains(Flags::C) as u16;
         let value = a + m;
-        self.a = value as u8;
         self.p
             .set(Flags::V, (a ^ value) & (m ^ value) & 0x0080 != 0);
         self.p.set(Flags::C, value & 0x0100 != 0);
-        self.set_zero_and_negative_flags();
+        self.set_a(value as u8);
     }
 
     fn and(&mut self) {
-        self.a = self.a & self.value0;
-        self.set_zero_and_negative_flags();
+        self.set_a(self.a & self.value0);
     }
 
     fn eor(&mut self) {
-        self.a = self.a ^ self.value0;
-        self.set_zero_and_negative_flags();
+        self.set_a(self.a ^ self.value0);
+    }
+
+    fn lda(& mut self) {
+        self.set_a(self.value0);
     }
 
     fn ora(&mut self) {
-        self.a = self.a | self.value0;
-        self.set_zero_and_negative_flags();
+        self.set_a(self.a | self.value0);
     }
 
     fn sbc(&mut self) {
         let a = self.a as u16;
         let m = self.value0 as u16 + 1 - (self.p.contains(Flags::C) as u16);
         let value = a.wrapping_sub(m);
-        self.a = value as u8;
         // overflow if result > 127 or < -128
         // positive - negative -> positive overflow
         // positive - positive -> no overflow
@@ -341,7 +342,7 @@ impl Cpu {
             (a ^ m) & (a ^ value) & 0x0080 != 0
         );
         self.p.set(Flags::C, value & 0x0100 == 0);
-        self.set_zero_and_negative_flags();
+        self.set_a(value as u8);
     }
 }
 
@@ -660,6 +661,35 @@ mod tests {
         assert_eq!(cpu.a, 0x00);
         assert!(!cpu.p.contains(Flags::N));
         assert!(cpu.p.contains(Flags::Z));
+    }
+
+    #[test]
+    fn lda() {
+        let mut cpu = setup(&[
+            0xA9, 0x00, // LDA $#00
+            0xA9, 0x81, // LDA $#81
+            0xA9, 0x23, // LDA $#23
+        ]);
+        cpu.a = 0xff;
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch operand
+        assert_eq!(cpu.a, 0xff);
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x00);
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(cpu.p.contains(Flags::Z));
+
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x81);
+        assert!(cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x23);
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
     }
 
     #[test]
