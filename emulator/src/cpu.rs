@@ -235,6 +235,7 @@ impl Cpu {
                 match Instruction::from(self.opcode) {
                     Instruction::Adc => self.adc(),
                     Instruction::And => self.and(),
+                    Instruction::Cmp => self.cmp(),
                     Instruction::Eor => self.eor(),
                     Instruction::Lda => self.lda(),
                     Instruction::Ora => self.ora(),
@@ -288,9 +289,13 @@ impl Cpu {
         self.pc = self.pc.wrapping_add(1);
     }
 
-    fn set_a(&mut self, value: u8) {
+    fn set_zero_and_negative_flags(&mut self, value: u8) {
         self.p.set(Flags::Z, value == 0);
         self.p.set(Flags::N, value & 0x80 != 0);
+    }
+
+    fn set_a(&mut self, value: u8) {
+        self.set_zero_and_negative_flags(value);
         self.a = value;
     }
 
@@ -308,11 +313,17 @@ impl Cpu {
         self.set_a(self.a & self.value0);
     }
 
+    fn cmp(&mut self) {
+        let (value, overflow) = self.a.overflowing_sub(self.value0);
+        self.set_zero_and_negative_flags(value);
+        self.p.set(Flags::C, !overflow);
+    }
+
     fn eor(&mut self) {
         self.set_a(self.a ^ self.value0);
     }
 
-    fn lda(& mut self) {
+    fn lda(&mut self) {
         self.set_a(self.value0);
     }
 
@@ -334,13 +345,10 @@ impl Cpu {
         //
         // which can be translated to:
         // ((a & !m & !value) | (!a & m & value)) & 0x0080
-        // 
+        //
         // which can be simplified to:
         // (a ^ m) & (a ^ value) & 0x0080
-        self.p.set(
-            Flags::V,
-            (a ^ m) & (a ^ value) & 0x0080 != 0
-        );
+        self.p.set(Flags::V, (a ^ m) & (a ^ value) & 0x0080 != 0);
         self.p.set(Flags::C, value & 0x0100 == 0);
         self.set_a(value as u8);
     }
@@ -640,6 +648,37 @@ mod tests {
         assert_eq!(cpu.a, 0xf4);
         assert!(cpu.p.contains(Flags::N));
         assert!(!cpu.p.contains(Flags::Z));
+    }
+
+    #[test]
+    fn cmp() {
+        let mut cpu = setup(&[
+            0xC9, 0x43, // CMP #$43
+            0xC9, 0x54, // CMP #$54
+            0xC9, 0x20, // CMP #$20
+        ]);
+        cpu.a = 0x43;
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x43);
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(cpu.p.contains(Flags::Z));
+        assert!(cpu.p.contains(Flags::C));
+
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x43);
+        assert!(cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+        assert!(!cpu.p.contains(Flags::C));
+
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x43);
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+        assert!(cpu.p.contains(Flags::C));
     }
 
     #[test]
