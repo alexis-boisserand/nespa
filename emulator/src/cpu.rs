@@ -1,4 +1,3 @@
-
 use bitflags::bitflags;
 use num_traits::FromPrimitive;
 
@@ -82,9 +81,7 @@ impl From<Instruction> for InstructionKind {
             | Instruction::Sbc
             | Instruction::Cmp
             | Instruction::Bit => InstructionKind::Read,
-            Instruction::Sta
-            | Instruction::Stx
-            | Instruction::Sty => InstructionKind::Write,
+            Instruction::Sta | Instruction::Stx | Instruction::Sty => InstructionKind::Write,
             _ => unreachable!(),
         }
     }
@@ -109,6 +106,14 @@ impl From<OpCode> for AddressingMode {
         let bbb = (opcode.0 >> 2) & 0x7;
 
         match cc {
+            0x00 => match bbb {
+                0x00 => AddressingMode::Immediate,
+                0x01 => AddressingMode::Zeropage,
+                0x03 => AddressingMode::Absolute,
+                0x05 => AddressingMode::ZeroPageX,
+                0x07 => AddressingMode::AbsoluteX,
+                _ => panic!("invalid addressing mode, opcode: {:?}", opcode),
+            },
             0x01 => match bbb {
                 0x00 => AddressingMode::IndirectX,
                 0x01 => AddressingMode::Zeropage,
@@ -120,7 +125,7 @@ impl From<OpCode> for AddressingMode {
                 0x07 => AddressingMode::AbsoluteX,
                 _ => panic!("invalid addressing mode, opcode: {:?}", opcode),
             },
-            0x10 => match bbb {
+            0x02 => match bbb {
                 0x00 => AddressingMode::Immediate,
                 0x01 => AddressingMode::Zeropage,
                 0x02 => AddressingMode::Accumulator,
@@ -147,7 +152,7 @@ enum CpuState {
     IndirectX2,
     IndirectY0,
     IndirectY1,
-    Instruction,
+    ReadInstruction,
 }
 
 #[derive(Debug)]
@@ -202,7 +207,7 @@ impl Cpu {
                         if self.instruction == Instruction::Sta {
                             panic!("invalid instruction: {:?}", self.opcode)
                         } else {
-                            CpuState::Instruction
+                            CpuState::ReadInstruction
                         }
                     }
                     AddressingMode::Absolute => CpuState::FetchValue1(None),
@@ -234,18 +239,19 @@ impl Cpu {
                 match self.instruction_kind {
                     InstructionKind::Read => {
                         self.value0 = self.read_mem(address);
-                        CpuState::Instruction
+                        CpuState::ReadInstruction
                     }
                     InstructionKind::Write => {
-                        match self.instruction {
-                            Instruction::Sta => {
-                                self.write_mem(address, self.a);
-                            }
-                            _ => unreachable!()
-                        }
+                        let value = match self.instruction {
+                            Instruction::Sta => self.a,
+                            Instruction::Stx => self.x,
+                            Instruction::Sty => self.y,
+                            _ => unreachable!(),
+                        };
+                        self.write_mem(address, value);
                         CpuState::FetchOpCode
                     }
-                    _ => unimplemented!()
+                    _ => unimplemented!(),
                 }
             }
             CpuState::ZeroPageX => {
@@ -284,7 +290,7 @@ impl Cpu {
                     CpuState::ReadOrWrite
                 }
             }
-            CpuState::Instruction => {
+            CpuState::ReadInstruction => {
                 match self.instruction {
                     Instruction::Adc => self.adc(),
                     Instruction::And => self.and(),
@@ -911,5 +917,31 @@ mod tests {
         cpu.tick(); // write register to address
         cpu.tick(); // fetch the next opcode
         assert_eq!(cpu.read_mem(0x0016), 0x32);
+    }
+
+    #[test]
+    fn stx() {
+        let mut cpu = setup(&[
+            0x86, 0x16, // STX $16
+        ]);
+        cpu.x = 0x42;
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch address
+        cpu.tick(); // write register to address
+        cpu.tick(); // fetch the next opcode
+        assert_eq!(cpu.read_mem(0x0016), 0x42);
+    }
+
+    #[test]
+    fn sty() {
+        let mut cpu = setup(&[
+            0x84, 0x16, // STY $16
+        ]);
+        cpu.y = 0x78;
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch address
+        cpu.tick(); // write register to address
+        cpu.tick(); // fetch the next opcode
+        assert_eq!(cpu.read_mem(0x0016), 0x78);
     }
 }
