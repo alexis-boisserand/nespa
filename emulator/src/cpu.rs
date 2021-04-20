@@ -22,7 +22,6 @@ struct OpCode(u8);
 
 #[derive(Debug, Copy, Clone, PartialEq, num_derive::FromPrimitive)]
 enum Instruction {
-    None,
     Ora = 0b01000,
     And,
     Eor,
@@ -62,7 +61,6 @@ impl From<OpCode> for Instruction {
 
 #[derive(Debug, Copy, Clone)]
 enum InstructionKind {
-    None,
     Read,
     ReadWrite,
     Write,
@@ -98,6 +96,7 @@ enum AddressingMode {
     AbsoluteY,
     AbsoluteX,
     Accumulator,
+    Implied,
 }
 
 impl From<OpCode> for AddressingMode {
@@ -152,7 +151,7 @@ enum CpuState {
     IndirectX2,
     IndirectY0,
     IndirectY1,
-    ReadInstruction,
+    Instruction,
 }
 
 #[derive(Debug)]
@@ -165,9 +164,9 @@ pub struct Cpu {
     p: Flags,
     mem: [u8; 0xFFFF],
     state: CpuState,
-    opcode: OpCode,
     instruction: Instruction,
     instruction_kind: InstructionKind,
+    addressing_mode: AddressingMode,
     value0: u8,
     value1: u8,
 }
@@ -183,9 +182,10 @@ impl Cpu {
             p: Flags::from_bits(P_INIT_VALUE).unwrap(),
             mem: [0; 0xFFFF],
             state: CpuState::FetchOpCode,
-            opcode: OpCode(0),
-            instruction: Instruction::None,
-            instruction_kind: InstructionKind::None,
+            // actual initial values don't matter the next 3 fields
+            instruction: Instruction::Adc,
+            instruction_kind: InstructionKind::Read,
+            addressing_mode: AddressingMode::Implied,
             value0: 0,
             value1: 0,
         }
@@ -198,18 +198,10 @@ impl Cpu {
                 self.value0 = self.read_mem(self.pc);
                 self.value1 = 0;
                 self.increment_pc();
-                self.instruction = Instruction::from(self.opcode);
-                self.instruction_kind = InstructionKind::from(self.instruction);
-                match AddressingMode::from(self.opcode) {
+                match self.addressing_mode {
                     AddressingMode::IndirectX => CpuState::IndirectX0,
                     AddressingMode::Zeropage => CpuState::ReadOrWrite,
-                    AddressingMode::Immediate => {
-                        if self.instruction == Instruction::Sta {
-                            panic!("invalid instruction: {:?}", self.opcode)
-                        } else {
-                            CpuState::ReadInstruction
-                        }
-                    }
+                    AddressingMode::Immediate => CpuState::Instruction,
                     AddressingMode::Absolute => CpuState::FetchValue1(None),
                     AddressingMode::IndirectY => CpuState::IndirectY0,
                     AddressingMode::ZeroPageX => CpuState::ZeroPageX,
@@ -239,7 +231,7 @@ impl Cpu {
                 match self.instruction_kind {
                     InstructionKind::Read => {
                         self.value0 = self.read_mem(address);
-                        CpuState::ReadInstruction
+                        CpuState::Instruction
                     }
                     InstructionKind::Write => {
                         let value = match self.instruction {
@@ -290,7 +282,7 @@ impl Cpu {
                     CpuState::ReadOrWrite
                 }
             }
-            CpuState::ReadInstruction => {
+            CpuState::Instruction => {
                 match self.instruction {
                     Instruction::Adc => self.adc(),
                     Instruction::And => self.and(),
@@ -338,9 +330,15 @@ impl Cpu {
     }
 
     fn fetch_opcode(&mut self) -> CpuState {
-        self.opcode = OpCode(self.read_mem(self.pc));
+        let opcode = OpCode(self.read_mem(self.pc));
         self.increment_pc();
-        CpuState::FetchValue0
+        self.instruction = Instruction::from(opcode);
+        self.instruction_kind = InstructionKind::from(self.instruction);
+        self.addressing_mode = AddressingMode::from(opcode);
+        match self.addressing_mode {
+            AddressingMode::Implied | AddressingMode::Accumulator => todo!(),
+            _ => CpuState::FetchValue0,
+        }
     }
 
     fn increment_pc(&mut self) {
@@ -416,14 +414,20 @@ impl Cpu {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::iter;
     const RAM_CODE_START: u16 = 0x400;
 
     fn setup(instructions: &[u8]) -> Cpu {
         let mut cpu = Cpu::new();
         cpu.write_mem_u16(RESET_VECTOR, RAM_CODE_START);
-        instructions.iter().enumerate().for_each(|(index, value)| {
-            cpu.write_mem(RAM_CODE_START + index as u16, *value);
-        });
+        instructions
+            .iter()
+            .chain(iter::once(&0x69)) // just add a valid opcode for the test not to panic
+            // when it encounters an invalid one
+            .enumerate()
+            .for_each(|(index, value)| {
+                cpu.write_mem(RAM_CODE_START + index as u16, *value);
+            });
         cpu.reset();
         cpu
     }
