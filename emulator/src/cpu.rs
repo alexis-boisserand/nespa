@@ -18,7 +18,24 @@ bitflags! {
 }
 
 #[derive(Debug, Copy, Clone)]
-struct OpCode(u8);
+struct OpCode {
+    instruction: Instruction,
+    instruction_kind: InstructionKind,
+    addressing_mode: AddressingMode
+}
+
+impl OpCode {
+    fn new(opcode: u8) -> Self {
+        let instruction = Instruction::from(opcode);
+        let instruction_kind = InstructionKind::from(instruction);
+        let addressing_mode = AddressingMode::from(opcode);
+        Self {
+            instruction,
+            instruction_kind,
+            addressing_mode
+        }
+    }
+}
 
 #[derive(Debug, Copy, Clone, PartialEq, num_derive::FromPrimitive)]
 enum Instruction {
@@ -47,13 +64,13 @@ enum Instruction {
     Cpx,
 }
 
-impl From<OpCode> for Instruction {
-    fn from(opcode: OpCode) -> Self {
+impl From<u8> for Instruction {
+    fn from(opcode: u8) -> Self {
         // instructions are of the form aaabbbcc
         // where the combination of aaa and cc determine the opcode
         // and bbb the addressing mode
-        let aaa = opcode.0 >> 5;
-        let cc = opcode.0 & 0x3;
+        let aaa = opcode >> 5;
+        let cc = opcode & 0x3;
         let instruction = (cc << 3) | aaa;
         Instruction::from_u8(instruction).expect("invalid instruction")
     }
@@ -99,10 +116,10 @@ enum AddressingMode {
     Implied,
 }
 
-impl From<OpCode> for AddressingMode {
-    fn from(opcode: OpCode) -> Self {
-        let cc = opcode.0 & 0x3;
-        let bbb = (opcode.0 >> 2) & 0x7;
+impl From<u8> for AddressingMode {
+    fn from(opcode: u8) -> Self {
+        let cc = opcode & 0x3;
+        let bbb = (opcode >> 2) & 0x7;
 
         match cc {
             0x00 => match bbb {
@@ -164,9 +181,7 @@ pub struct Cpu {
     p: Flags,
     mem: [u8; 0xFFFF],
     state: CpuState,
-    instruction: Instruction,
-    instruction_kind: InstructionKind,
-    addressing_mode: AddressingMode,
+    opcode: OpCode,
     value0: u8,
     value1: u8,
 }
@@ -183,9 +198,7 @@ impl Cpu {
             mem: [0; 0xFFFF],
             state: CpuState::FetchOpCode,
             // actual initial values don't matter the next 3 fields
-            instruction: Instruction::Adc,
-            instruction_kind: InstructionKind::Read,
-            addressing_mode: AddressingMode::Implied,
+            opcode: OpCode::new(0x69),
             value0: 0,
             value1: 0,
         }
@@ -198,7 +211,7 @@ impl Cpu {
                 self.value0 = self.read_mem(self.pc);
                 self.value1 = 0;
                 self.increment_pc();
-                match self.addressing_mode {
+                match self.opcode.addressing_mode {
                     AddressingMode::IndirectX => CpuState::IndirectX0,
                     AddressingMode::Zeropage => CpuState::ReadOrWrite,
                     AddressingMode::Immediate => CpuState::Instruction,
@@ -228,13 +241,13 @@ impl Cpu {
             }
             CpuState::ReadOrWrite => {
                 let address = (self.value1 as u16) << 8 | self.value0 as u16;
-                match self.instruction_kind {
+                match self.opcode.instruction_kind {
                     InstructionKind::Read => {
                         self.value0 = self.read_mem(address);
                         CpuState::Instruction
                     }
                     InstructionKind::Write => {
-                        let value = match self.instruction {
+                        let value = match self.opcode.instruction {
                             Instruction::Sta => self.a,
                             Instruction::Stx => self.x,
                             Instruction::Sty => self.y,
@@ -283,7 +296,7 @@ impl Cpu {
                 }
             }
             CpuState::Instruction => {
-                match self.instruction {
+                match self.opcode.instruction {
                     Instruction::Adc => self.adc(),
                     Instruction::And => self.and(),
                     Instruction::Cmp => self.cmp(),
@@ -330,12 +343,9 @@ impl Cpu {
     }
 
     fn fetch_opcode(&mut self) -> CpuState {
-        let opcode = OpCode(self.read_mem(self.pc));
+        self.opcode = OpCode::new(self.read_mem(self.pc));
         self.increment_pc();
-        self.instruction = Instruction::from(opcode);
-        self.instruction_kind = InstructionKind::from(self.instruction);
-        self.addressing_mode = AddressingMode::from(opcode);
-        match self.addressing_mode {
+        match self.opcode.addressing_mode {
             AddressingMode::Implied | AddressingMode::Accumulator => todo!(),
             _ => CpuState::FetchValue0,
         }
