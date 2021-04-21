@@ -1,6 +1,13 @@
 use bitflags::bitflags;
 use num_traits::FromPrimitive;
 
+macro_rules! set_reg {
+    ($self:ident, $field:ident, $value:expr) => {
+        $self.set_zero_and_negative_flags($value);
+        $self.$field = $value;
+    };
+}
+
 const P_INIT_VALUE: u8 = 0x34;
 const S_INIT_VALUE: u8 = 0xFD;
 const RESET_VECTOR: u16 = 0xFFFC;
@@ -317,6 +324,8 @@ impl Cpu {
                     Instruction::Cmp => self.cmp(),
                     Instruction::Eor => self.eor(),
                     Instruction::Lda => self.lda(),
+                    Instruction::Ldx => self.ldx(),
+                    Instruction::Ldy => self.ldy(),
                     Instruction::Ora => self.ora(),
                     Instruction::Sbc => self.sbc(),
                     _ => todo!(),
@@ -383,11 +392,6 @@ impl Cpu {
         self.p.set(Flags::N, value & 0x80 != 0);
     }
 
-    fn set_a(&mut self, value: u8) {
-        self.set_zero_and_negative_flags(value);
-        self.a = value;
-    }
-
     fn execute_read_write_instruction(&mut self, value: u8) -> u8 {
         match self.opcode.instruction {
             Instruction::Asl => self.asl(value),
@@ -405,11 +409,11 @@ impl Cpu {
         self.p
             .set(Flags::V, (a ^ value) & (m ^ value) & 0x0080 != 0);
         self.p.set(Flags::C, value & 0x0100 != 0);
-        self.set_a(value as u8);
+        set_reg!(self, a, value as u8);
     }
 
     fn and(&mut self) {
-        self.set_a(self.a & self.value0);
+        set_reg!(self, a, self.a & self.value0);
     }
 
     fn asl(&mut self, mut value: u8) -> u8 {
@@ -427,11 +431,19 @@ impl Cpu {
     }
 
     fn eor(&mut self) {
-        self.set_a(self.a ^ self.value0);
+        set_reg!(self, a, self.a ^ self.value0);
     }
 
     fn lda(&mut self) {
-        self.set_a(self.value0);
+        set_reg!(self, a, self.value0);
+    }
+
+    fn ldx(&mut self) {
+        set_reg!(self, x, self.value0);
+    }
+
+    fn ldy(&mut self) {
+        set_reg!(self, y, self.value0);
     }
 
     fn lsr(&mut self, mut value: u8) -> u8 {
@@ -443,7 +455,7 @@ impl Cpu {
     }
 
     fn ora(&mut self) {
-        self.set_a(self.a | self.value0);
+        set_reg!(self, a, self.a | self.value0);
     }
 
     fn rol(&mut self, mut value: u8) -> u8 {
@@ -483,7 +495,7 @@ impl Cpu {
         // (a ^ m) & (a ^ value) & 0x0080
         self.p.set(Flags::V, (a ^ m) & (a ^ value) & 0x0080 != 0);
         self.p.set(Flags::C, value & 0x0100 == 0);
-        self.set_a(value as u8);
+        set_reg!(self, a, value as u8);
     }
 }
 
@@ -910,6 +922,64 @@ mod tests {
         cpu.tick(); // fetch operand
         cpu.tick(); // execute and and fetch the next opcode at the same time
         assert_eq!(cpu.a, 0x23);
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+    }
+
+    #[test]
+    fn ldx() {
+        let mut cpu = setup(&[
+            0xA2, 0x00, // LDX $#00
+            0xA2, 0x81, // LDX $#81
+            0xA2, 0x23, // LDX $#23
+        ]);
+        cpu.x = 0xff;
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch operand
+        assert_eq!(cpu.x, 0xff);
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.x, 0x00);
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(cpu.p.contains(Flags::Z));
+
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.x, 0x81);
+        assert!(cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.x, 0x23);
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+    }
+
+    #[test]
+    fn ldy() {
+        let mut cpu = setup(&[
+            0xA0, 0x00, // LDY $#00
+            0xA0, 0x81, // LDY $#81
+            0xA0, 0x23, // LDY $#23
+        ]);
+        cpu.y = 0xff;
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch operand
+        assert_eq!(cpu.y, 0xff);
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.y, 0x00);
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(cpu.p.contains(Flags::Z));
+
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.y, 0x81);
+        assert!(cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.y, 0x23);
         assert!(!cpu.p.contains(Flags::N));
         assert!(!cpu.p.contains(Flags::Z));
     }
