@@ -97,8 +97,9 @@ impl From<Instruction> for InstructionKind {
             | Instruction::Cmp
             | Instruction::Bit => InstructionKind::Read,
             Instruction::Sta | Instruction::Stx | Instruction::Sty => InstructionKind::Write,
-            Instruction::Asl 
-            | Instruction::Rol => InstructionKind::ReadWrite,
+            Instruction::Asl | Instruction::Rol | Instruction::Lsr | Instruction::Ror => {
+                InstructionKind::ReadWrite
+            }
             _ => unreachable!(),
         }
     }
@@ -246,11 +247,7 @@ impl Cpu {
                 }
             }
             CpuState::Accumulator => {
-                self.a = match self.opcode.instruction {
-                    Instruction::Asl => self.asl(self.a),
-                    Instruction::Rol => self.rol(self.a),
-                    _ => todo!(),
-                };
+                self.a = self.execute_read_write_instruction(self.a);
                 self.fetch_opcode()
             }
             CpuState::ReadOrWrite => {
@@ -329,11 +326,7 @@ impl Cpu {
             CpuState::ReadWriteInstruction(address) => {
                 // in theory, at this point, self.value0 is written to address
                 // right before executing the instruction
-                self.value0 = match self.opcode.instruction {
-                    Instruction::Asl => self.asl(self.value0),
-                    Instruction::Rol => self.rol(self.value0),
-                    _ => todo!(),
-                };
+                self.value0 = self.execute_read_write_instruction(self.value0);
                 CpuState::WriteBack(address)
             }
             CpuState::WriteBack(address) => {
@@ -395,6 +388,16 @@ impl Cpu {
         self.a = value;
     }
 
+    fn execute_read_write_instruction(&mut self, value: u8) -> u8 {
+        match self.opcode.instruction {
+            Instruction::Asl => self.asl(value),
+            Instruction::Rol => self.rol(value),
+            Instruction::Lsr => self.lsr(value),
+            Instruction::Ror => self.ror(value),
+            _ => todo!(),
+        }
+    }
+
     fn adc(&mut self) {
         let a = self.a as u16;
         let m = self.value0 as u16 + self.p.contains(Flags::C) as u16;
@@ -431,6 +434,14 @@ impl Cpu {
         self.set_a(self.value0);
     }
 
+    fn lsr(&mut self, mut value: u8) -> u8 {
+        let carry = value & 0x01;
+        value = value >> 1;
+        self.set_zero_and_negative_flags(value);
+        self.p.set(Flags::C, carry != 0);
+        value
+    }
+
     fn ora(&mut self) {
         self.set_a(self.a | self.value0);
     }
@@ -439,6 +450,15 @@ impl Cpu {
         let new_carry = value & 0x80;
         let old_carry = self.p.contains(Flags::C) as u8;
         value = (value << 1) | old_carry;
+        self.set_zero_and_negative_flags(value);
+        self.p.set(Flags::C, new_carry != 0);
+        value
+    }
+
+    fn ror(&mut self, mut value: u8) -> u8 {
+        let new_carry = value & 0x01;
+        let old_carry = self.p.contains(Flags::C) as u8;
+        value = (old_carry << 7) | (value >> 1);
         self.set_zero_and_negative_flags(value);
         self.p.set(Flags::C, new_carry != 0);
         value
@@ -895,6 +915,38 @@ mod tests {
     }
 
     #[test]
+    fn lsr() {
+        let mut cpu = setup(&[
+            0x4A, 0x43, // LSR A // next byte is discarded
+            0x4A, 0x44, // LSR A
+            0x4A, 0x64, // LSR A
+        ]);
+        cpu.a = 0x01;
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch operand (and throw it away)
+        assert_eq!(cpu.a, 0x01);
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x00);
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(cpu.p.contains(Flags::Z));
+        assert!(cpu.p.contains(Flags::C));
+
+        cpu.tick(); // fetch operand (and throw it away)
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x00);
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(cpu.p.contains(Flags::Z));
+        assert!(!cpu.p.contains(Flags::C));
+
+        cpu.a = 0x44;
+        cpu.tick(); // fetch operand (and throw it away)
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x22);
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+        assert!(!cpu.p.contains(Flags::C));
+    }
+    #[test]
     fn ora() {
         let mut cpu = setup(&[
             0x09, 0x00, // ORA #$00
@@ -961,6 +1013,40 @@ mod tests {
         cpu.tick(); // write result back
         assert_eq!(cpu.read_mem(0x66), 0x50);
         cpu.tick(); // fetch next opcode
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+        assert!(!cpu.p.contains(Flags::C));
+    }
+
+    #[test]
+    fn ror() {
+        let mut cpu = setup(&[
+            0x6A, 0x43, // ROR A // next byte is discarded
+            0x6A, 0x44, // ROR A
+            0x6A, 0x64, // ROR A
+        ]);
+        cpu.a = 0x01;
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch operand (and throw it away)
+        assert_eq!(cpu.a, 0x01);
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x00);
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(cpu.p.contains(Flags::Z));
+        assert!(cpu.p.contains(Flags::C));
+
+        cpu.tick(); // fetch operand (and throw it away)
+        assert_eq!(cpu.a, 0x00);
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x80);
+        assert!(cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+        assert!(!cpu.p.contains(Flags::C));
+
+        cpu.a = 0x44;
+        cpu.tick(); // fetch operand (and throw it away)
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x22);
         assert!(!cpu.p.contains(Flags::N));
         assert!(!cpu.p.contains(Flags::Z));
         assert!(!cpu.p.contains(Flags::C));
