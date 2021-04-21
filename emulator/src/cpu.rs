@@ -97,7 +97,8 @@ impl From<Instruction> for InstructionKind {
             | Instruction::Cmp
             | Instruction::Bit => InstructionKind::Read,
             Instruction::Sta | Instruction::Stx | Instruction::Sty => InstructionKind::Write,
-            Instruction::Asl => InstructionKind::ReadWrite,
+            Instruction::Asl 
+            | Instruction::Rol => InstructionKind::ReadWrite,
             _ => unreachable!(),
         }
     }
@@ -245,8 +246,9 @@ impl Cpu {
                 }
             }
             CpuState::Accumulator => {
-                match self.opcode.instruction {
-                    Instruction::Asl => self.a = self.asl(self.a),
+                self.a = match self.opcode.instruction {
+                    Instruction::Asl => self.asl(self.a),
+                    Instruction::Rol => self.rol(self.a),
                     _ => todo!(),
                 };
                 self.fetch_opcode()
@@ -329,6 +331,7 @@ impl Cpu {
                 // right before executing the instruction
                 self.value0 = match self.opcode.instruction {
                     Instruction::Asl => self.asl(self.value0),
+                    Instruction::Rol => self.rol(self.value0),
                     _ => todo!(),
                 };
                 CpuState::WriteBack(address)
@@ -430,6 +433,15 @@ impl Cpu {
 
     fn ora(&mut self) {
         self.set_a(self.a | self.value0);
+    }
+
+    fn rol(&mut self, mut value: u8) -> u8 {
+        let new_carry = value & 0x80;
+        let old_carry = self.p.contains(Flags::C) as u8;
+        value = (value << 1) | old_carry;
+        self.set_zero_and_negative_flags(value);
+        self.p.set(Flags::C, new_carry != 0);
+        value
     }
 
     fn sbc(&mut self) {
@@ -910,6 +922,49 @@ mod tests {
         assert!(!cpu.p.contains(Flags::Z));
     }
 
+    #[test]
+    fn rol() {
+        let mut cpu = setup(&[
+            0x2A, 0x43, // ROL A // next byte is discarded
+            0x26, 0x44, // ROL $44
+            0x36, 0x64, // ROL $64,X
+        ]);
+        cpu.a = 0x80;
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch operand (and throw it away)
+        assert_eq!(cpu.a, 0x80);
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x00);
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(cpu.p.contains(Flags::Z));
+        assert!(cpu.p.contains(Flags::C));
+
+        cpu.write_mem(0x44, 0x42);
+        cpu.tick(); // fetch address
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute instruction
+        assert_eq!(cpu.read_mem(0x44), 0x42);
+        cpu.tick(); // write result back to address
+        assert_eq!(cpu.read_mem(0x44), 0x85);
+        cpu.tick(); // fetch next opcode
+        assert!(cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+        assert!(!cpu.p.contains(Flags::C));
+
+        cpu.x = 0x02;
+        cpu.write_mem(0x66, 0x28);
+        cpu.tick(); // fetch address
+        cpu.tick(); // add X to the address
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute instruction
+        assert_eq!(cpu.read_mem(0x66), 0x28);
+        cpu.tick(); // write result back
+        assert_eq!(cpu.read_mem(0x66), 0x50);
+        cpu.tick(); // fetch next opcode
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+        assert!(!cpu.p.contains(Flags::C));
+    }
     #[test]
     fn sbc() {
         // test Z, N and C flags
