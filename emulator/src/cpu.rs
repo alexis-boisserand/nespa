@@ -21,7 +21,7 @@ bitflags! {
 struct OpCode {
     instruction: Instruction,
     instruction_kind: InstructionKind,
-    addressing_mode: AddressingMode
+    addressing_mode: AddressingMode,
 }
 
 impl OpCode {
@@ -32,7 +32,7 @@ impl OpCode {
         Self {
             instruction,
             instruction_kind,
-            addressing_mode
+            addressing_mode,
         }
     }
 }
@@ -97,6 +97,7 @@ impl From<Instruction> for InstructionKind {
             | Instruction::Cmp
             | Instruction::Bit => InstructionKind::Read,
             Instruction::Sta | Instruction::Stx | Instruction::Sty => InstructionKind::Write,
+            Instruction::Asl => InstructionKind::ReadWrite,
             _ => unreachable!(),
         }
     }
@@ -160,6 +161,7 @@ enum CpuState {
     FetchOpCode,
     FetchValue0,
     FetchValue1(Option<u8>),
+    Accumulator,
     ReadOrWrite,
     ZeroPageX,
     PageCrossing,
@@ -168,7 +170,9 @@ enum CpuState {
     IndirectX2,
     IndirectY0,
     IndirectY1,
-    Instruction,
+    ReadInstruction,
+    ReadWriteInstruction(u16),
+    WriteBack(u16),
 }
 
 #[derive(Debug)]
@@ -210,11 +214,12 @@ impl Cpu {
             CpuState::FetchValue0 => {
                 self.value0 = self.read_mem(self.pc);
                 self.value1 = 0;
-                self.increment_pc();
+                self.increment_pc(); // in the case of single byte instruction, the following byte is read and discarded
                 match self.opcode.addressing_mode {
+                    AddressingMode::Accumulator => CpuState::Accumulator,
                     AddressingMode::IndirectX => CpuState::IndirectX0,
                     AddressingMode::Zeropage => CpuState::ReadOrWrite,
-                    AddressingMode::Immediate => CpuState::Instruction,
+                    AddressingMode::Immediate => CpuState::ReadInstruction,
                     AddressingMode::Absolute => CpuState::FetchValue1(None),
                     AddressingMode::IndirectY => CpuState::IndirectY0,
                     AddressingMode::ZeroPageX => CpuState::ZeroPageX,
@@ -239,12 +244,23 @@ impl Cpu {
                     None => CpuState::ReadOrWrite,
                 }
             }
+            CpuState::Accumulator => {
+                match self.opcode.instruction {
+                    Instruction::Asl => self.a = self.asl(self.a),
+                    _ => todo!(),
+                };
+                self.fetch_opcode()
+            }
             CpuState::ReadOrWrite => {
                 let address = (self.value1 as u16) << 8 | self.value0 as u16;
                 match self.opcode.instruction_kind {
                     InstructionKind::Read => {
                         self.value0 = self.read_mem(address);
-                        CpuState::Instruction
+                        CpuState::ReadInstruction
+                    }
+                    InstructionKind::ReadWrite => {
+                        self.value0 = self.read_mem(address);
+                        CpuState::ReadWriteInstruction(address)
                     }
                     InstructionKind::Write => {
                         let value = match self.opcode.instruction {
@@ -295,7 +311,7 @@ impl Cpu {
                     CpuState::ReadOrWrite
                 }
             }
-            CpuState::Instruction => {
+            CpuState::ReadInstruction => {
                 match self.opcode.instruction {
                     Instruction::Adc => self.adc(),
                     Instruction::And => self.and(),
@@ -307,6 +323,19 @@ impl Cpu {
                     _ => todo!(),
                 };
                 self.fetch_opcode()
+            }
+            CpuState::ReadWriteInstruction(address) => {
+                // in theory, at this point, self.value0 is written to address
+                // right before executing the instruction
+                self.value0 = match self.opcode.instruction {
+                    Instruction::Asl => self.asl(self.value0),
+                    _ => todo!(),
+                };
+                CpuState::WriteBack(address)
+            }
+            CpuState::WriteBack(address) => {
+                self.write_mem(address, self.value0);
+                CpuState::FetchOpCode
             }
         };
     }
@@ -345,10 +374,7 @@ impl Cpu {
     fn fetch_opcode(&mut self) -> CpuState {
         self.opcode = OpCode::new(self.read_mem(self.pc));
         self.increment_pc();
-        match self.opcode.addressing_mode {
-            AddressingMode::Implied | AddressingMode::Accumulator => todo!(),
-            _ => CpuState::FetchValue0,
-        }
+        CpuState::FetchValue0
     }
 
     fn increment_pc(&mut self) {
@@ -378,6 +404,14 @@ impl Cpu {
 
     fn and(&mut self) {
         self.set_a(self.a & self.value0);
+    }
+
+    fn asl(&mut self, mut value: u8) -> u8 {
+        let carry = value & 0x80;
+        value = value << 1;
+        self.set_zero_and_negative_flags(value);
+        self.p.set(Flags::C, carry != 0);
+        value
     }
 
     fn cmp(&mut self) {
@@ -721,6 +755,50 @@ mod tests {
         assert_eq!(cpu.a, 0xf4);
         assert!(cpu.p.contains(Flags::N));
         assert!(!cpu.p.contains(Flags::Z));
+    }
+
+    #[test]
+    fn asl() {
+        let mut cpu = setup(&[
+            0x0A, 0x43, // ASL A // next byte is discarded
+            0x06, 0x44, // ASL $44
+            0x16, 0x64, // ASL $64,X
+        ]);
+        cpu.a = 0x80;
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch operand (and throw it away)
+        assert_eq!(cpu.a, 0x80);
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0x00);
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(cpu.p.contains(Flags::Z));
+        assert!(cpu.p.contains(Flags::C));
+
+        cpu.write_mem(0x44, 0x42);
+        cpu.tick(); // fetch address
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute instruction
+        assert_eq!(cpu.read_mem(0x44), 0x42);
+        cpu.tick(); // write result back to address
+        assert_eq!(cpu.read_mem(0x44), 0x84);
+        cpu.tick(); // fetch next opcode
+        assert!(cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+        assert!(!cpu.p.contains(Flags::C));
+
+        cpu.x = 0x02;
+        cpu.write_mem(0x66, 0x28);
+        cpu.tick(); // fetch address
+        cpu.tick(); // add X to the address
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute instruction
+        assert_eq!(cpu.read_mem(0x66), 0x28);
+        cpu.tick(); // write result back
+        assert_eq!(cpu.read_mem(0x66), 0x50);
+        cpu.tick(); // fetch next opcode
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+        assert!(!cpu.p.contains(Flags::C));
     }
 
     #[test]
