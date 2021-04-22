@@ -324,6 +324,7 @@ impl Cpu {
                 match self.opcode.instruction {
                     Instruction::Adc => self.adc(),
                     Instruction::And => self.and(),
+                    Instruction::Bit => self.bit(),
                     Instruction::Cmp => self.cmp(),
                     Instruction::Eor => self.eor(),
                     Instruction::Lda => self.lda(),
@@ -427,6 +428,11 @@ impl Cpu {
         self.set_zero_and_negative_flags(value);
         self.p.set(Flags::C, carry != 0);
         value
+    }
+
+    fn bit(&mut self) {
+        let value = self.a & self.value0;
+        self.set_zero_and_negative_flags(value);
     }
 
     fn cmp(&mut self) {
@@ -860,6 +866,40 @@ mod tests {
         assert!(!cpu.p.contains(Flags::N));
         assert!(!cpu.p.contains(Flags::Z));
         assert!(!cpu.p.contains(Flags::C));
+    }
+
+    #[test]
+    fn bit() {
+        let mut cpu = setup(&[
+            0x24, 0x16, // BIT $16
+            0x24, 0x16, // BIT $16
+            0x24, 0x16, // BIT $16
+        ]);
+        cpu.a = 0xff;
+        cpu.write_mem(0x16, 0x80);
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch address
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert_eq!(cpu.a, 0xff); // values doesn't change
+        assert_eq!(cpu.read_mem(0x16), 0x80); // value doesn't change
+        assert!(cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+
+        cpu.write_mem(0x16, 0x08);
+        cpu.tick(); // fetch address
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+
+        cpu.a = 0x40;
+        cpu.write_mem(0x16, 0x02);
+        cpu.tick(); // fetch address
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute and and fetch the next opcode at the same time
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(cpu.p.contains(Flags::Z));
     }
 
     #[test]
