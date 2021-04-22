@@ -104,9 +104,12 @@ impl From<Instruction> for InstructionKind {
             | Instruction::Cmp
             | Instruction::Bit => InstructionKind::Read,
             Instruction::Sta | Instruction::Stx | Instruction::Sty => InstructionKind::Write,
-            Instruction::Asl | Instruction::Rol | Instruction::Lsr | Instruction::Ror => {
-                InstructionKind::ReadWrite
-            }
+            Instruction::Inc
+            | Instruction::Dec
+            | Instruction::Asl
+            | Instruction::Rol
+            | Instruction::Lsr
+            | Instruction::Ror => InstructionKind::ReadWrite,
             _ => unreachable!(),
         }
     }
@@ -395,8 +398,10 @@ impl Cpu {
     fn execute_read_write_instruction(&mut self, value: u8) -> u8 {
         match self.opcode.instruction {
             Instruction::Asl => self.asl(value),
-            Instruction::Rol => self.rol(value),
+            Instruction::Dec => self.dec(value),
+            Instruction::Inc => self.inc(value),
             Instruction::Lsr => self.lsr(value),
+            Instruction::Rol => self.rol(value),
             Instruction::Ror => self.ror(value),
             _ => todo!(),
         }
@@ -430,8 +435,20 @@ impl Cpu {
         self.p.set(Flags::C, !overflow);
     }
 
+    fn dec(&mut self, value: u8) -> u8 {
+        let value = value.wrapping_sub(1);
+        self.set_zero_and_negative_flags(value);
+        value
+    }
+
     fn eor(&mut self) {
         set_reg!(self, a, self.a ^ self.value0);
+    }
+
+    fn inc(&mut self, value: u8) -> u8 {
+        let value = value.wrapping_add(1);
+        self.set_zero_and_negative_flags(value);
+        value
     }
 
     fn lda(&mut self) {
@@ -874,6 +891,77 @@ mod tests {
         assert!(!cpu.p.contains(Flags::N));
         assert!(!cpu.p.contains(Flags::Z));
         assert!(cpu.p.contains(Flags::C));
+    }
+
+    #[test]
+    fn dec() {
+        let mut cpu = setup(&[
+            0xC6, 0x43, // DEC $43
+            0xC6, 0x43, // DEC $43
+        ]);
+
+        cpu.write_mem(0x43, 0x01);
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch address
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute instruction
+        assert_eq!(cpu.read_mem(0x43), 0x01);
+        cpu.tick(); // write result back to address
+        assert_eq!(cpu.read_mem(0x43), 0x00);
+        cpu.tick(); // fetch next opcode
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(cpu.p.contains(Flags::Z));
+
+        cpu.tick(); // fetch address
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute instruction
+        assert_eq!(cpu.read_mem(0x43), 0x00);
+        cpu.tick(); // write result back to address
+        assert_eq!(cpu.read_mem(0x43), 0xff);
+        cpu.tick(); // fetch next opcode
+        assert!(cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+    }
+
+    #[test]
+    fn inc() {
+        let mut cpu = setup(&[
+            0xE6, 0x43, // INC $43
+            0xE6, 0x43, // INC $43
+            0xE6, 0x43, // INC $43
+        ]);
+
+        cpu.write_mem(0x43, 0xfe);
+        cpu.tick(); // fetch opcode
+        cpu.tick(); // fetch address
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute instruction
+        assert_eq!(cpu.read_mem(0x43), 0xfe);
+        cpu.tick(); // write result back to address
+        assert_eq!(cpu.read_mem(0x43), 0xff);
+        cpu.tick(); // fetch next opcode
+        assert!(cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
+
+        cpu.tick(); // fetch address
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute instruction
+        assert_eq!(cpu.read_mem(0x43), 0xff);
+        cpu.tick(); // write result back to address
+        assert_eq!(cpu.read_mem(0x43), 0x00);
+        cpu.tick(); // fetch next opcode
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(cpu.p.contains(Flags::Z));
+
+        cpu.tick(); // fetch address
+        cpu.tick(); // fetch operand
+        cpu.tick(); // execute instruction
+        assert_eq!(cpu.read_mem(0x43), 0x00);
+        cpu.tick(); // write result back to address
+        assert_eq!(cpu.read_mem(0x43), 0x01);
+        cpu.tick(); // fetch next opcode
+        assert!(!cpu.p.contains(Flags::N));
+        assert!(!cpu.p.contains(Flags::Z));
     }
 
     #[test]
