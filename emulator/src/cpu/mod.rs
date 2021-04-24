@@ -1,8 +1,9 @@
+mod opcodes;
 #[cfg(test)]
 mod tests;
 
+use self::opcodes::{AddressingMode, Instruction, OpCode};
 use bitflags::bitflags;
-use num_traits::FromPrimitive;
 
 macro_rules! set_reg {
     ($self:ident, $field:ident, $value:expr) => {
@@ -27,156 +28,12 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-struct OpCode {
-    instruction: Instruction,
-    instruction_kind: InstructionKind,
-    addressing_mode: AddressingMode,
-}
-
-impl OpCode {
-    fn new(opcode: u8) -> Self {
-        let instruction = Instruction::from(opcode);
-        let instruction_kind = InstructionKind::from(instruction);
-        let addressing_mode = AddressingMode::from(opcode);
-        Self {
-            instruction,
-            instruction_kind,
-            addressing_mode,
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, num_derive::FromPrimitive)]
-enum Instruction {
-    Ora = 0b01000,
-    And,
-    Eor,
-    Adc,
-    Sta,
-    Lda,
-    Cmp,
-    Sbc,
-    Asl = 0b10000,
-    Rol,
-    Lsr,
-    Ror,
-    Stx,
-    Ldx,
-    Dec,
-    Inc,
-    Bit = 0b00001,
-    Jmp,
-    JmpAbs,
-    Sty,
-    Ldy,
-    Cpy,
-    Cpx,
-}
-
-impl From<u8> for Instruction {
-    fn from(opcode: u8) -> Self {
-        // instructions are of the form aaabbbcc
-        // where the combination of aaa and cc determine the opcode
-        // and bbb the addressing mode
-        let aaa = opcode >> 5;
-        let cc = opcode & 0x3;
-        let instruction = (cc << 3) | aaa;
-        Instruction::from_u8(instruction).expect("invalid instruction")
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-enum InstructionKind {
-    Read,
-    ReadWrite,
-    Write,
-}
-
-impl From<Instruction> for InstructionKind {
-    fn from(instruction: Instruction) -> Self {
-        match instruction {
-            Instruction::Lda
-            | Instruction::Ldx
-            | Instruction::Ldy
-            | Instruction::Eor
-            | Instruction::And
-            | Instruction::Ora
-            | Instruction::Adc
-            | Instruction::Sbc
-            | Instruction::Cmp
-            | Instruction::Bit => InstructionKind::Read,
-            Instruction::Sta | Instruction::Stx | Instruction::Sty => InstructionKind::Write,
-            Instruction::Inc
-            | Instruction::Dec
-            | Instruction::Asl
-            | Instruction::Rol
-            | Instruction::Lsr
-            | Instruction::Ror => InstructionKind::ReadWrite,
-            _ => unreachable!(),
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-enum AddressingMode {
-    IndirectX,
-    Zeropage,
-    Immediate,
-    Absolute,
-    IndirectY,
-    ZeroPageX,
-    AbsoluteY,
-    AbsoluteX,
-    Accumulator,
-    Implied,
-}
-
-impl From<u8> for AddressingMode {
-    fn from(opcode: u8) -> Self {
-        let cc = opcode & 0x3;
-        let bbb = (opcode >> 2) & 0x7;
-
-        match cc {
-            0x00 => match bbb {
-                0x00 => AddressingMode::Immediate,
-                0x01 => AddressingMode::Zeropage,
-                0x03 => AddressingMode::Absolute,
-                0x05 => AddressingMode::ZeroPageX,
-                0x07 => AddressingMode::AbsoluteX,
-                _ => panic!("invalid addressing mode, opcode: {:?}", opcode),
-            },
-            0x01 => match bbb {
-                0x00 => AddressingMode::IndirectX,
-                0x01 => AddressingMode::Zeropage,
-                0x02 => AddressingMode::Immediate,
-                0x03 => AddressingMode::Absolute,
-                0x04 => AddressingMode::IndirectY,
-                0x05 => AddressingMode::ZeroPageX,
-                0x06 => AddressingMode::AbsoluteY,
-                0x07 => AddressingMode::AbsoluteX,
-                _ => panic!("invalid addressing mode, opcode: {:?}", opcode),
-            },
-            0x02 => match bbb {
-                0x00 => AddressingMode::Immediate,
-                0x01 => AddressingMode::Zeropage,
-                0x02 => AddressingMode::Accumulator,
-                0x03 => AddressingMode::Absolute,
-                0x05 => AddressingMode::ZeroPageX,
-                0x07 => AddressingMode::AbsoluteX,
-                _ => panic!("invalid addressing mode, opcode: {:?}", opcode),
-            },
-            _ => panic!("invalid addressing mode, opcode: {:?}", opcode),
-        }
-    }
-}
-
 #[derive(Debug)]
 enum CpuState {
     FetchOpCode,
     FetchValue0,
     FetchValue1(Option<u8>),
-    Accumulator,
+    Accumulator(opcodes::ReadWriteInstruction),
     ReadOrWrite,
     ZeroPageX,
     PageCrossing,
@@ -185,8 +42,8 @@ enum CpuState {
     IndirectX2,
     IndirectY0,
     IndirectY1,
-    ReadInstruction,
-    ReadWriteInstruction(u16),
+    ReadInstruction(opcodes::ReadInstruction),
+    ReadWriteInstruction(opcodes::ReadWriteInstruction, u16),
     WriteBack(u16),
 }
 
@@ -217,7 +74,7 @@ impl Cpu {
             mem: [0; 0xFFFF],
             state: CpuState::FetchOpCode,
             // actual initial values don't matter the next 3 fields
-            opcode: OpCode::new(0x69),
+            opcode: OpCode::from(0x69),
             value0: 0,
             value1: 0,
         }
@@ -231,16 +88,33 @@ impl Cpu {
                 self.value1 = 0;
                 self.increment_pc(); // in the case of single byte instruction, the following byte is read and discarded
                 match self.opcode.addressing_mode {
-                    AddressingMode::Accumulator => CpuState::Accumulator,
+                    AddressingMode::Accumulator => {
+                        if let Instruction::ReadWrite(instruction) = self.opcode.instruction {
+                            CpuState::Accumulator(instruction)
+                        } else {
+                            unreachable!("only read write instructions support the accumulator addressing mode")
+                        }
+                    }
                     AddressingMode::IndirectX => CpuState::IndirectX0,
-                    AddressingMode::Zeropage => CpuState::ReadOrWrite,
-                    AddressingMode::Immediate => CpuState::ReadInstruction,
+                    AddressingMode::ZeroPage => CpuState::ReadOrWrite,
+                    AddressingMode::Immediate => {
+                        if let Instruction::Read(instruction) = self.opcode.instruction {
+                            CpuState::ReadInstruction(instruction)
+                        } else {
+                            unreachable!(
+                                "only read instructions support the immediate addressing mode"
+                            )
+                        }
+                    }
                     AddressingMode::Absolute => CpuState::FetchValue1(None),
                     AddressingMode::IndirectY => CpuState::IndirectY0,
                     AddressingMode::ZeroPageX => CpuState::ZeroPageX,
+                    AddressingMode::ZeroPageY => unimplemented!(),
                     AddressingMode::AbsoluteY => CpuState::FetchValue1(Some(self.y)),
                     AddressingMode::AbsoluteX => CpuState::FetchValue1(Some(self.x)),
-                    _ => unimplemented!("unknown addressing mode"),
+                    AddressingMode::Implied => unimplemented!(),
+                    AddressingMode::Indirect => unimplemented!(),
+                    AddressingMode::Relative => unimplemented!(),
                 }
             }
             CpuState::FetchValue1(index) => {
@@ -259,27 +133,26 @@ impl Cpu {
                     None => CpuState::ReadOrWrite,
                 }
             }
-            CpuState::Accumulator => {
-                self.a = self.execute_read_write_instruction(self.a);
+            CpuState::Accumulator(instruction) => {
+                self.a = self.execute_read_write_instruction(instruction, self.a);
                 self.fetch_opcode()
             }
             CpuState::ReadOrWrite => {
                 let address = (self.value1 as u16) << 8 | self.value0 as u16;
-                match self.opcode.instruction_kind {
-                    InstructionKind::Read => {
+                match self.opcode.instruction {
+                    Instruction::Read(instruction) => {
                         self.value0 = self.read_mem(address);
-                        CpuState::ReadInstruction
+                        CpuState::ReadInstruction(instruction)
                     }
-                    InstructionKind::ReadWrite => {
+                    Instruction::ReadWrite(instruction) => {
                         self.value0 = self.read_mem(address);
-                        CpuState::ReadWriteInstruction(address)
+                        CpuState::ReadWriteInstruction(instruction, address)
                     }
-                    InstructionKind::Write => {
-                        let value = match self.opcode.instruction {
-                            Instruction::Sta => self.a,
-                            Instruction::Stx => self.x,
-                            Instruction::Sty => self.y,
-                            _ => unreachable!(),
+                    Instruction::Write(instruction) => {
+                        let value = match instruction {
+                            opcodes::WriteInstruction::Sta => self.a,
+                            opcodes::WriteInstruction::Stx => self.x,
+                            opcodes::WriteInstruction::Sty => self.y,
                         };
                         self.write_mem(address, value);
                         CpuState::FetchOpCode
@@ -323,26 +196,25 @@ impl Cpu {
                     CpuState::ReadOrWrite
                 }
             }
-            CpuState::ReadInstruction => {
-                match self.opcode.instruction {
-                    Instruction::Adc => self.adc(),
-                    Instruction::And => self.and(),
-                    Instruction::Bit => self.bit(),
-                    Instruction::Cmp => self.cmp(),
-                    Instruction::Eor => self.eor(),
-                    Instruction::Lda => self.lda(),
-                    Instruction::Ldx => self.ldx(),
-                    Instruction::Ldy => self.ldy(),
-                    Instruction::Ora => self.ora(),
-                    Instruction::Sbc => self.sbc(),
-                    _ => todo!(),
+            CpuState::ReadInstruction(instruction) => {
+                match instruction {
+                    opcodes::ReadInstruction::Adc => self.adc(),
+                    opcodes::ReadInstruction::And => self.and(),
+                    opcodes::ReadInstruction::Bit => self.bit(),
+                    opcodes::ReadInstruction::Cmp => self.cmp(),
+                    opcodes::ReadInstruction::Eor => self.eor(),
+                    opcodes::ReadInstruction::Lda => self.lda(),
+                    opcodes::ReadInstruction::Ldx => self.ldx(),
+                    opcodes::ReadInstruction::Ldy => self.ldy(),
+                    opcodes::ReadInstruction::Ora => self.ora(),
+                    opcodes::ReadInstruction::Sbc => self.sbc(),
                 };
                 self.fetch_opcode()
             }
-            CpuState::ReadWriteInstruction(address) => {
+            CpuState::ReadWriteInstruction(instruction, address) => {
                 // in theory, at this point, self.value0 is written to address
                 // right before executing the instruction
-                self.value0 = self.execute_read_write_instruction(self.value0);
+                self.value0 = self.execute_read_write_instruction(instruction, self.value0);
                 CpuState::WriteBack(address)
             }
             CpuState::WriteBack(address) => {
@@ -384,7 +256,7 @@ impl Cpu {
     }
 
     fn fetch_opcode(&mut self) -> CpuState {
-        self.opcode = OpCode::new(self.read_mem(self.pc));
+        self.opcode = OpCode::from(self.read_mem(self.pc));
         self.increment_pc();
         CpuState::FetchValue0
     }
@@ -399,15 +271,18 @@ impl Cpu {
         self.p.set(Flags::N, value & 0x80 != 0);
     }
 
-    fn execute_read_write_instruction(&mut self, value: u8) -> u8 {
-        match self.opcode.instruction {
-            Instruction::Asl => self.asl(value),
-            Instruction::Dec => self.dec(value),
-            Instruction::Inc => self.inc(value),
-            Instruction::Lsr => self.lsr(value),
-            Instruction::Rol => self.rol(value),
-            Instruction::Ror => self.ror(value),
-            _ => todo!(),
+    fn execute_read_write_instruction(
+        &mut self,
+        instruction: opcodes::ReadWriteInstruction,
+        value: u8,
+    ) -> u8 {
+        match instruction {
+            opcodes::ReadWriteInstruction::Asl => self.asl(value),
+            opcodes::ReadWriteInstruction::Dec => self.dec(value),
+            opcodes::ReadWriteInstruction::Inc => self.inc(value),
+            opcodes::ReadWriteInstruction::Lsr => self.lsr(value),
+            opcodes::ReadWriteInstruction::Rol => self.rol(value),
+            opcodes::ReadWriteInstruction::Ror => self.ror(value),
         }
     }
 
@@ -524,4 +399,3 @@ impl Cpu {
         set_reg!(self, a, value as u8);
     }
 }
-
