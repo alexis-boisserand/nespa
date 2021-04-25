@@ -1,3 +1,3 @@
 #![no_std]
 
-mod cpu;
+pub mod cpu;

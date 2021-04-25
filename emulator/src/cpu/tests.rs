@@ -189,7 +189,7 @@ fn and_absolute_y() {
     cpu.y = 0xf0;
     cpu.write_mem(0x2306, 0xf3);
     cpu.tick(); // fetch address low byte
-    cpu.tick(); // fetch address high byte and add y to the low address byte, page bound cross detected
+    cpu.tick(); // fetch address high byte and add y to the low address byte, page bound crossing detected
     cpu.tick(); // add 1 to the address high byte
     cpu.tick(); // fetch operand
     assert_eq!(cpu.a, 0xff);
@@ -225,7 +225,7 @@ fn and_absolute_x() {
     cpu.x = 0xf0;
     cpu.write_mem(0x2306, 0xf3);
     cpu.tick(); // fetch address low byte
-    cpu.tick(); // fetch address high byte and add x to the low address byte, page bound cross detected
+    cpu.tick(); // fetch address high byte and add x to the low address byte, page bound crossing detected
     cpu.tick(); // add 1 to the address high byte
     cpu.tick(); // fetch operand
     assert_eq!(cpu.a, 0xff);
@@ -288,7 +288,7 @@ fn and_indirect_y() {
     cpu.write_mem(0x2304, 0xf4);
     cpu.tick(); // fetch address's address
     cpu.tick(); // fetch address low byte
-    cpu.tick(); // fetch address high byte and add x to the low address byte, page bound cross detected
+    cpu.tick(); // fetch address high byte and add x to the low address byte, page bound crossing detected
     cpu.tick(); // add 1 to the address high byte
     cpu.tick(); // fetch operand
     assert_eq!(cpu.a, 0xff);
@@ -340,6 +340,79 @@ fn asl() {
     assert!(!cpu.p.contains(Flags::N));
     assert!(!cpu.p.contains(Flags::Z));
     assert!(!cpu.p.contains(Flags::C));
+}
+
+#[test]
+fn bcc() {
+    // these instructions are set at RAM_CODE_START
+    let instructions = [
+        0x90, 0x02, // BCC $02
+        0x29, 0x55, // AND #$55
+        0x29, 0xaa, // AND #$aa
+        0x90, 0xfa, // BCC $fa // -6
+        0x09, 0xff, // OR #$ff
+    ];
+    let mut cpu = setup(&instructions);
+
+    // condition is false
+    cpu.a = 0xff;
+    cpu.p.set(Flags::C, true);
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is false, fetch next opcode
+    cpu.tick(); // fetch immediate value
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0x55);
+
+    // condition is true, forward jump to AND #$aa, no page bound crossed
+    cpu.reset();
+    cpu.a = 0xff;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is true, set PC
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch immediate value
+    assert_eq!(cpu.a, 0xff);
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0xaa);
+
+    // condition is still true, backward jump to AND #$55, no page bound crossed
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is true, set PC
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch immediate value
+    assert_eq!(cpu.a, 0xaa);
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0x00);
+
+    // condition is true, forward jump to AND #$aa, page bound crossed
+    cpu.reset();
+    cpu.a = 0xff;
+    let instructions_offset = 0xfc;
+    cpu.pc = RAM_CODE_START + instructions_offset;
+    instructions.iter().enumerate().for_each(|(index, &value)| {
+        cpu.write_mem(RAM_CODE_START + instructions_offset + index as u16, value);
+    });
+
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is true, set PC, pagebound crossing detected
+    cpu.tick(); // fix PCH
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch immediate value
+    assert_eq!(cpu.a, 0xff);
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0xaa);
+
+    // condition is still true, backward jump to AND #$55, page bound crossed
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is true, set PC, pagebound crossing detected
+    cpu.tick(); // fix PCH
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch immediate value
+    assert_eq!(cpu.a, 0xaa);
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0x00);
 }
 
 #[test]

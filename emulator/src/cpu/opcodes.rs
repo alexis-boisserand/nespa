@@ -1,5 +1,3 @@
-use core::fmt;
-
 #[derive(Debug, Copy, Clone)]
 pub struct OpCode {
     pub instruction: Instruction,
@@ -9,11 +7,11 @@ pub struct OpCode {
 impl From<u8> for OpCode {
     fn from(opcode: u8) -> Self {
         use AddressingMode::*;
+        use BranchInstruction::*;
         use Instruction::*;
         use ReadInstruction::*;
         use ReadWriteInstruction::*;
         use WriteInstruction::*;
-        use BranchInstruction:: *;
         let (instruction, addressing_mode) = match opcode {
             0x00 => (Branch(Brk), Implied),
             0x01 => (Read(Ora), IndirectX),

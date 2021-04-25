@@ -44,6 +44,8 @@ enum CpuState {
     IndirectY1,
     ReadInstruction(opcodes::ReadInstruction),
     ReadWriteInstruction(opcodes::ReadWriteInstruction, u16),
+    BranchInstruction0(opcodes::BranchInstruction),
+    BranchInstruction1(bool),
     WriteBack(u16),
 }
 
@@ -82,7 +84,11 @@ impl Cpu {
 
     pub fn tick(&mut self) {
         self.state = match self.state {
-            CpuState::FetchOpCode => self.fetch_opcode(),
+            CpuState::FetchOpCode => {
+                self.fetch_opcode();
+                self.increment_pc();
+                CpuState::FetchValue0
+            }
             CpuState::FetchValue0 => {
                 self.value0 = self.read_mem(self.pc);
                 self.value1 = 0;
@@ -114,7 +120,15 @@ impl Cpu {
                     AddressingMode::AbsoluteX => CpuState::FetchValue1(Some(self.x)),
                     AddressingMode::Implied => unimplemented!(),
                     AddressingMode::Indirect => unimplemented!(),
-                    AddressingMode::Relative => unimplemented!(),
+                    AddressingMode::Relative => {
+                        if let Instruction::Branch(instruction) = self.opcode.instruction {
+                            CpuState::BranchInstruction0(instruction)
+                        } else {
+                            unreachable!(
+                                "only read instructions support the immediate addressing mode"
+                            )
+                        }
+                    }
                 }
             }
             CpuState::FetchValue1(index) => {
@@ -135,7 +149,9 @@ impl Cpu {
             }
             CpuState::Accumulator(instruction) => {
                 self.a = self.execute_read_write_instruction(instruction, self.a);
-                self.fetch_opcode()
+                self.fetch_opcode();
+                self.increment_pc();
+                CpuState::FetchValue0
             }
             CpuState::ReadOrWrite => {
                 let address = (self.value1 as u16) << 8 | self.value0 as u16;
@@ -209,7 +225,9 @@ impl Cpu {
                     opcodes::ReadInstruction::Ora => self.ora(),
                     opcodes::ReadInstruction::Sbc => self.sbc(),
                 };
-                self.fetch_opcode()
+                self.fetch_opcode();
+                self.increment_pc();
+                CpuState::FetchValue0
             }
             CpuState::ReadWriteInstruction(instruction, address) => {
                 // in theory, at this point, self.value0 is written to address
@@ -221,11 +239,49 @@ impl Cpu {
                 self.write_mem(address, self.value0);
                 CpuState::FetchOpCode
             }
+            CpuState::BranchInstruction0(instruction) => {
+                self.fetch_opcode();
+                let condition_fulfilled: bool = match instruction {
+                    opcodes::BranchInstruction::Bcc => self.bcc(),
+                    _ => unimplemented!(),
+                };
+                if condition_fulfilled {
+                    let pcl = (self.pc & 0xFF) as u8;
+                    let offset = self.value0 as i8;
+                    let offset_positive = offset.is_positive();
+                    let (value, pagebound_crossed) = if offset_positive {
+                        pcl.overflowing_add(self.value0)
+                    } else {
+                        pcl.overflowing_sub(offset.unsigned_abs())
+                    };
+                    self.pc = (self.pc & 0xFF00) | value as u16;
+                    if pagebound_crossed {
+                        CpuState::BranchInstruction1(offset_positive)
+                    } else {
+                        CpuState::FetchOpCode
+                    }
+                } else {
+                    self.increment_pc();
+                    CpuState::FetchValue0
+                }
+            }
+            CpuState::BranchInstruction1(positive) => {
+                self.fetch_opcode();
+                let mut pch = (self.pc >> 8) as u8;
+                pch = if positive {
+                    pch.wrapping_add(1)
+                } else {
+                    pch.wrapping_sub(1)
+                };
+                self.pc = (pch as u16) << 8 | (self.pc & 0xFF);
+                CpuState::FetchOpCode
+            }
         };
     }
 
     pub fn reset(&mut self) {
         // TODO initialize other registers
+        self.p = Flags::from_bits(P_INIT_VALUE).unwrap();
         self.pc = self.read_mem_u16(RESET_VECTOR);
         self.state = CpuState::FetchOpCode;
     }
@@ -255,10 +311,8 @@ impl Cpu {
             .for_each(|(dest, src)| *dest = *src);
     }
 
-    fn fetch_opcode(&mut self) -> CpuState {
+    fn fetch_opcode(&mut self) {
         self.opcode = OpCode::from(self.read_mem(self.pc));
-        self.increment_pc();
-        CpuState::FetchValue0
     }
 
     fn increment_pc(&mut self) {
@@ -306,6 +360,10 @@ impl Cpu {
         self.set_zero_and_negative_flags(value);
         self.p.set(Flags::C, carry != 0);
         value
+    }
+
+    fn bcc(&mut self) -> bool {
+        !self.p.contains(Flags::C)
     }
 
     fn bit(&mut self) {
