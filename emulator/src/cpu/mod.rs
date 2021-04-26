@@ -243,7 +243,13 @@ impl Cpu {
                 self.fetch_opcode();
                 let condition_fulfilled: bool = match instruction {
                     opcodes::BranchInstruction::Bcc => self.bcc(),
-                    _ => unimplemented!(),
+                    opcodes::BranchInstruction::Bcs => self.bcs(),
+                    opcodes::BranchInstruction::Beq => self.beq(),
+                    opcodes::BranchInstruction::Bmi => self.bmi(),
+                    opcodes::BranchInstruction::Bne => self.bne(),
+                    opcodes::BranchInstruction::Bpl => self.bpl(),
+                    opcodes::BranchInstruction::Bvc => self.bvc(),
+                    opcodes::BranchInstruction::Bvs => self.bvs(),
                 };
                 if condition_fulfilled {
                     let pcl = (self.pc & 0xFF) as u8;
@@ -366,9 +372,37 @@ impl Cpu {
         !self.p.contains(Flags::C)
     }
 
+    fn bcs(&mut self) -> bool {
+        self.p.contains(Flags::C)
+    }
+
+    fn beq(&mut self) -> bool {
+        self.p.contains(Flags::Z)
+    }
+
     fn bit(&mut self) {
         let value = self.a & self.value0;
         self.set_zero_and_negative_flags(value);
+    }
+
+    fn bmi(&mut self) -> bool {
+        self.p.contains(Flags::N)
+    }
+
+    fn bne(&mut self) -> bool {
+        !self.p.contains(Flags::Z)
+    }
+
+    fn bpl(&mut self) -> bool {
+        !self.p.contains(Flags::N)
+    }
+
+    fn bvc(&mut self) -> bool {
+        !self.p.contains(Flags::V)
+    }
+
+    fn bvs(&mut self) -> bool {
+        self.p.contains(Flags::V)
     }
 
     fn cmp(&mut self) {

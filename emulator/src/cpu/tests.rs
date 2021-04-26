@@ -343,16 +343,14 @@ fn asl() {
 }
 
 #[test]
-fn bcc() {
-    // these instructions are set at RAM_CODE_START
-    let instructions = [
+fn bcc_no_page_bound_crossed() {
+    let mut cpu = setup(&[
         0x90, 0x02, // BCC $02
         0x29, 0x55, // AND #$55
         0x29, 0xaa, // AND #$aa
         0x90, 0xfa, // BCC $fa // -6
         0x09, 0xff, // OR #$ff
-    ];
-    let mut cpu = setup(&instructions);
+    ]);
 
     // condition is false
     cpu.a = 0xff;
@@ -384,13 +382,25 @@ fn bcc() {
     assert_eq!(cpu.a, 0xaa);
     cpu.tick(); // fetch next opcode and execute
     assert_eq!(cpu.a, 0x00);
+}
 
+#[test]
+fn bcc_page_bound_crossed() {
+    let mut cpu = setup(&[]);
     // condition is true, forward jump to AND #$aa, page bound crossed
-    cpu.reset();
     cpu.a = 0xff;
     let instructions_offset = 0xfc;
     cpu.pc = RAM_CODE_START + instructions_offset;
-    instructions.iter().enumerate().for_each(|(index, &value)| {
+    [
+        0x90, 0x02, // BCC $02
+        0x29, 0x55, // AND #$55
+        0x29, 0xaa, // AND #$aa
+        0x90, 0xfa, // BCC $fa // -6
+        0x09, 0xff, // OR #$ff
+    ]
+    .iter()
+    .enumerate()
+    .for_each(|(index, &value)| {
         cpu.write_mem(RAM_CODE_START + instructions_offset + index as u16, value);
     });
 
@@ -415,6 +425,174 @@ fn bcc() {
     assert_eq!(cpu.a, 0x00);
 }
 
+#[test]
+fn bcs() {
+    let mut cpu = setup(&[
+        0xB0, 0x02, // BCS $02
+        0x29, 0x55, // AND #$55
+        0x29, 0xaa, // AND #$aa
+        0xB0, 0xfa, // BCS $fa // -6
+        0x09, 0xff, // OR #$ff
+    ]);
+
+    // condition is false
+    cpu.a = 0xff;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is false, fetch next opcode
+    cpu.tick(); // fetch immediate value
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0x55);
+
+    // condition is true, forward jump to AND #$aa, no page bound crossed
+    cpu.reset();
+    cpu.p.set(Flags::C, true);
+    cpu.a = 0xff;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is true, set PC
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch immediate value
+    assert_eq!(cpu.a, 0xff);
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0xaa);
+
+    // condition is true, backward jump to AND #$55, no page bound crossed
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is true, set PC
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch immediate value
+    assert_eq!(cpu.a, 0xaa);
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0x00);
+}
+
+#[test]
+fn beq() {
+    let mut cpu = setup(&[
+        0xF0, 0x02, // BEQ $02
+        0x29, 0x55, // AND #$55
+        0x29, 0xaa, // AND #$aa
+        0xF0, 0xfa, // BEQ $fa // -6
+        0x09, 0xff, // OR #$ff
+    ]);
+    // condition is false
+    cpu.a = 0xff;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is false, fetch next opcode
+    cpu.tick(); // fetch immediate value
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0x55);
+
+    // condition is true, forward jump to AND #$aa, no page bound crossed
+    cpu.reset();
+    cpu.p.set(Flags::Z, true);
+    cpu.a = 0xff;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is true, set PC
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch immediate value
+    assert_eq!(cpu.a, 0xff);
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0xaa);
+
+    // condition is true, backward jump to AND #$55, no page bound crossed
+    cpu.p.set(Flags::Z, true);
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is true, set PC
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch immediate value
+    assert_eq!(cpu.a, 0xaa);
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0x00);
+}
+
+#[test]
+fn bmi() {
+    // these instructions are set at RAM_CODE_START
+    let mut cpu = setup(&[
+        0x30, 0x02, // BMI $02
+        0x29, 0x55, // AND #$55
+        0x29, 0xaa, // AND #$aa
+        0x30, 0xfa, // BMI $fa // -6
+        0x09, 0xff, // OR #$ff
+    ]);
+    // condition is false
+    cpu.a = 0xff;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is false, fetch next opcode
+    cpu.tick(); // fetch immediate value
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0x55);
+
+    // condition is true, forward jump to AND #$aa, no page bound crossed
+    cpu.reset();
+    cpu.p.set(Flags::N, true);
+    cpu.a = 0xff;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is true, set PC
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch immediate value
+    assert_eq!(cpu.a, 0xff);
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0xaa);
+
+    // condition is true, backward jump to AND #$55, no page bound crossed
+    cpu.p.set(Flags::N, true);
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is true, set PC
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch immediate value
+    assert_eq!(cpu.a, 0xaa);
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0x00);
+}
+
+#[test]
+fn bne() {
+    let mut cpu = setup(&[
+        0xD0, 0x02, // BNE $02
+        0x29, 0x55, // AND #$55
+        0x29, 0xaa, // AND #$aa
+        0xD0, 0xfa, // BNE $fa // -6
+        0x09, 0xff, // OR #$ff
+    ]);
+    // condition is false
+    cpu.a = 0xff;
+    cpu.p.set(Flags::Z, true);
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is false, fetch next opcode
+    cpu.tick(); // fetch immediate value
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0x55);
+
+    // condition is true, forward jump to AND #$aa, no page bound crossed
+    cpu.reset();
+    cpu.a = 0xff;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is true, set PC
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch immediate value
+    assert_eq!(cpu.a, 0xff);
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0xaa);
+
+    // condition is true, backward jump to AND #$55, no page bound crossed
+    cpu.p.set(Flags::Z, false);
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is true, set PC
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch immediate value
+    assert_eq!(cpu.a, 0xaa);
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0x00);
+}
 #[test]
 fn bit() {
     let mut cpu = setup(&[
@@ -449,6 +627,134 @@ fn bit() {
     assert!(cpu.p.contains(Flags::Z));
 }
 
+#[test]
+fn bpl() {
+    // these instructions are set at RAM_CODE_START
+    let mut cpu = setup(&[
+        0x10, 0x02, // BPL $02
+        0x29, 0x55, // AND #$55
+        0x29, 0xaa, // AND #$aa
+        0x10, 0xfa, // BPL $fa // -6
+        0x09, 0xff, // OR #$ff
+    ]);
+    // condition is false
+    cpu.p.set(Flags::N, true);
+    cpu.a = 0xff;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is false, fetch next opcode
+    cpu.tick(); // fetch immediate value
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0x55);
+
+    // condition is true, forward jump to AND #$aa, no page bound crossed
+    cpu.reset();
+    cpu.a = 0xff;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is true, set PC
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch immediate value
+    assert_eq!(cpu.a, 0xff);
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0xaa);
+
+    // condition is true, backward jump to AND #$55, no page bound crossed
+    cpu.p.set(Flags::N, false);
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is true, set PC
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch immediate value
+    assert_eq!(cpu.a, 0xaa);
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0x00);
+}
+
+#[test]
+fn bvc() {
+    // these instructions are set at RAM_CODE_START
+    let mut cpu = setup(&[
+        0x50, 0x02, // BVC $02
+        0x29, 0x55, // AND #$55
+        0x29, 0xaa, // AND #$aa
+        0x50, 0xfa, // BVC $fa // -6
+        0x09, 0xff, // OR #$ff
+    ]);
+    // condition is false
+    cpu.p.set(Flags::V, true);
+    cpu.a = 0xff;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is false, fetch next opcode
+    cpu.tick(); // fetch immediate value
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0x55);
+
+    // condition is true, forward jump to AND #$aa, no page bound crossed
+    cpu.reset();
+    cpu.a = 0xff;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is true, set PC
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch immediate value
+    assert_eq!(cpu.a, 0xff);
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0xaa);
+
+    // condition is still true, backward jump to AND #$55, no page bound crossed
+    cpu.p.set(Flags::V, false);
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is true, set PC
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch immediate value
+    assert_eq!(cpu.a, 0xaa);
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0x00);
+}
+
+#[test]
+fn bvs() {
+    // these instructions are set at RAM_CODE_START
+    let mut cpu = setup(&[
+        0x70, 0x02, // BVS $02
+        0x29, 0x55, // AND #$55
+        0x29, 0xaa, // AND #$aa
+        0x70, 0xfa, // BVS $fa // -6
+        0x09, 0xff, // OR #$ff
+    ]);
+    // condition is false
+    cpu.a = 0xff;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is false, fetch next opcode
+    cpu.tick(); // fetch immediate value
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0x55);
+
+    // condition is true, forward jump to AND #$aa, no page bound crossed
+    cpu.reset();
+    cpu.p.set(Flags::V, true);
+    cpu.a = 0xff;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is true, set PC
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch immediate value
+    assert_eq!(cpu.a, 0xff);
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0xaa);
+
+    // condition is still true, backward jump to AND #$55, no page bound crossed
+    cpu.p.set(Flags::V, true);
+    cpu.tick(); // fetch offset
+    cpu.tick(); // condition is true, set PC
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch immediate value
+    assert_eq!(cpu.a, 0xaa);
+    cpu.tick(); // fetch next opcode and execute
+    assert_eq!(cpu.a, 0x00);
+}
 #[test]
 fn cmp() {
     let mut cpu = setup(&[
