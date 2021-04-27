@@ -31,8 +31,8 @@ bitflags! {
 #[derive(Debug)]
 enum CpuState {
     FetchOpCode,
-    FetchValue0,
-    FetchValue1(Option<u8>),
+    FetchValue,
+    Absolute(Option<u8>),
     Accumulator(opcodes::ReadWriteInstruction),
     ReadOrWrite,
     ZeroPageX,
@@ -45,6 +45,7 @@ enum CpuState {
     ReadInstruction(opcodes::ReadInstruction),
     ReadWriteInstruction(opcodes::ReadWriteInstruction, u16),
     BranchInstruction0(opcodes::BranchInstruction),
+    ImpliedInstruction(opcodes::ImpliedInstruction),
     BranchInstruction1(bool),
     WriteBack(u16),
 }
@@ -87,9 +88,9 @@ impl Cpu {
             CpuState::FetchOpCode => {
                 self.fetch_opcode();
                 self.increment_pc();
-                CpuState::FetchValue0
+                CpuState::FetchValue
             }
-            CpuState::FetchValue0 => {
+            CpuState::FetchValue => {
                 self.value0 = self.read_mem(self.pc);
                 self.value1 = 0;
                 self.increment_pc(); // in the case of single byte instruction, the following byte is read and discarded
@@ -112,13 +113,19 @@ impl Cpu {
                             )
                         }
                     }
-                    AddressingMode::Absolute => CpuState::FetchValue1(None),
+                    AddressingMode::Absolute => CpuState::Absolute(None),
                     AddressingMode::IndirectY => CpuState::IndirectY0,
                     AddressingMode::ZeroPageX => CpuState::ZeroPageX,
                     AddressingMode::ZeroPageY => unimplemented!(),
-                    AddressingMode::AbsoluteY => CpuState::FetchValue1(Some(self.y)),
-                    AddressingMode::AbsoluteX => CpuState::FetchValue1(Some(self.x)),
-                    AddressingMode::Implied => unimplemented!(),
+                    AddressingMode::AbsoluteY => CpuState::Absolute(Some(self.y)),
+                    AddressingMode::AbsoluteX => CpuState::Absolute(Some(self.x)),
+                    AddressingMode::Implied => {
+                        if let Instruction::Implied(instruction) = self.opcode.instruction {
+                            CpuState::ImpliedInstruction(instruction)
+                        } else {
+                            unreachable!()
+                        }
+                    }
                     AddressingMode::Indirect => unimplemented!(),
                     AddressingMode::Relative => {
                         if let Instruction::Branch(instruction) = self.opcode.instruction {
@@ -131,7 +138,7 @@ impl Cpu {
                     }
                 }
             }
-            CpuState::FetchValue1(index) => {
+            CpuState::Absolute(index) => {
                 self.value1 = self.read_mem(self.pc);
                 self.increment_pc();
                 match index {
@@ -151,7 +158,7 @@ impl Cpu {
                 self.a = self.execute_read_write_instruction(instruction, self.a);
                 self.fetch_opcode();
                 self.increment_pc();
-                CpuState::FetchValue0
+                CpuState::FetchValue
             }
             CpuState::ReadOrWrite => {
                 let address = (self.value1 as u16) << 8 | self.value0 as u16;
@@ -227,7 +234,7 @@ impl Cpu {
                 };
                 self.fetch_opcode();
                 self.increment_pc();
-                CpuState::FetchValue0
+                CpuState::FetchValue
             }
             CpuState::ReadWriteInstruction(instruction, address) => {
                 // in theory, at this point, self.value0 is written to address
@@ -268,7 +275,7 @@ impl Cpu {
                     }
                 } else {
                     self.increment_pc();
-                    CpuState::FetchValue0
+                    CpuState::FetchValue
                 }
             }
             CpuState::BranchInstruction1(positive) => {
@@ -281,6 +288,14 @@ impl Cpu {
                 };
                 self.pc = (pch as u16) << 8 | (self.pc & 0xFF);
                 CpuState::FetchOpCode
+            }
+            CpuState::ImpliedInstruction(instruction) => {
+                match instruction {
+                    opcodes::ImpliedInstruction::Dex => self.dex(),
+                }
+                self.fetch_opcode();
+                self.increment_pc();
+                CpuState::FetchValue
             }
         };
     }
@@ -308,6 +323,7 @@ impl Cpu {
         self.mem[address as usize] = value;
     }
 
+    #[cfg(test)]
     fn write_mem_u16(&mut self, address: u16, value: u16) {
         let value = value.to_le_bytes();
         let address = address as usize;
@@ -415,6 +431,10 @@ impl Cpu {
         let value = value.wrapping_sub(1);
         self.set_zero_and_negative_flags(value);
         value
+    }
+
+    fn dex(&mut self) {
+        self.x = self.dec(self.x);
     }
 
     fn eor(&mut self) {

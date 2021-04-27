@@ -817,6 +817,30 @@ fn dec() {
 }
 
 #[test]
+fn dex() {
+    let mut cpu = setup(&[
+        0xCA, 0x45, // DEX // operand is discarded
+        0xCA, 0x89, // DEX
+    ]);
+    cpu.x = 0x01;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // do nothing
+    assert_eq!(cpu.x, 0x01);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert!(!cpu.p.contains(Flags::N));
+    assert!(cpu.p.contains(Flags::Z));
+    assert_eq!(cpu.x, 0x00);
+
+    cpu.x = 0xd0;
+    cpu.tick(); // do nothing
+    assert_eq!(cpu.x, 0xd0);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.x, 0xcf);
+    assert!(cpu.p.contains(Flags::N));
+    assert!(!cpu.p.contains(Flags::Z));
+}
+
+#[test]
 fn inc() {
     let mut cpu = setup(&[
         0xE6, 0x43, // INC $43
