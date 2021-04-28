@@ -301,7 +301,7 @@ fn and_indirect_y() {
 #[test]
 fn asl() {
     let mut cpu = setup(&[
-        0x0A, 0x43, // ASL A // next byte is discarded
+        0x0A,       // ASL A // next byte is discarded
         0x06, 0x44, // ASL $44
         0x16, 0x64, // ASL $64,X
     ]);
@@ -755,6 +755,59 @@ fn bvs() {
     cpu.tick(); // fetch next opcode and execute
     assert_eq!(cpu.a, 0x00);
 }
+
+#[test]
+fn clc() {
+    let mut cpu = setup(&[
+        0x18, 0x45, // CLC // operand is discarded
+    ]);
+    cpu.p.set(Flags::C, true);
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // do nothing
+    assert!(cpu.p.contains(Flags::C));
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert!(!cpu.p.contains(Flags::C));
+}
+
+#[test]
+fn cld() {
+    let mut cpu = setup(&[
+        0xd8, 0x45, // CLD // operand is discarded
+    ]);
+    cpu.p.set(Flags::D, true);
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // do nothing
+    assert!(cpu.p.contains(Flags::D));
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert!(!cpu.p.contains(Flags::D));
+}
+
+#[test]
+fn cli() {
+    let mut cpu = setup(&[
+        0x58, 0x45, // CLI // operand is discarded
+    ]);
+    cpu.p.set(Flags::I, true);
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // do nothing
+    assert!(cpu.p.contains(Flags::I));
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert!(!cpu.p.contains(Flags::I));
+}
+
+#[test]
+fn clv() {
+    let mut cpu = setup(&[
+        0xb8, 0x45, // CLV // operand is discarded
+    ]);
+    cpu.p.set(Flags::V, true);
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // do nothing
+    assert!(cpu.p.contains(Flags::V));
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert!(!cpu.p.contains(Flags::V));
+}
+
 #[test]
 fn cmp() {
     let mut cpu = setup(&[
@@ -819,8 +872,8 @@ fn dec() {
 #[test]
 fn dex() {
     let mut cpu = setup(&[
-        0xCA, 0x45, // DEX // operand is discarded
-        0xCA, 0x89, // DEX
+        0xCA, // DEX // operand is discarded
+        0xCA, // DEX
     ]);
     cpu.x = 0x01;
     cpu.tick(); // fetch opcode
@@ -843,8 +896,8 @@ fn dex() {
 #[test]
 fn dey() {
     let mut cpu = setup(&[
-        0x88, 0x45, // DEX // operand is discarded
-        0x88, 0x89, // DEX
+        0x88, // DEX // operand is discarded
+        0x88, // DEX
     ]);
     cpu.y = 0x01;
     cpu.tick(); // fetch opcode
@@ -908,9 +961,9 @@ fn inc() {
 #[test]
 fn inx() {
     let mut cpu = setup(&[
-        0xE8, 0xe4, // INX // operand is ignored
-        0xE8, 0x43, // INX
-        0xE8, 0x22, // INX
+        0xE8, // INX // operand is ignored
+        0xE8, // INX
+        0xE8, // INX
     ]);
 
     cpu.x = 0x7f;
@@ -942,9 +995,9 @@ fn inx() {
 #[test]
 fn iny() {
     let mut cpu = setup(&[
-        0xC8, 0xe4, // INX // operand is ignored
-        0xC8, 0x43, // INX
-        0xC8, 0x22, // INX
+        0xC8, // INY // operand is ignored
+        0xC8, // INY
+        0xC8, // INY
     ]);
 
     cpu.y = 0x7f;
@@ -1084,9 +1137,9 @@ fn ldy() {
 #[test]
 fn lsr() {
     let mut cpu = setup(&[
-        0x4A, 0x43, // LSR A // next byte is discarded
-        0x4A, 0x44, // LSR A
-        0x4A, 0x64, // LSR A
+        0x4A, // LSR A // next byte is discarded
+        0x4A, // LSR A
+        0x4A, // LSR A
     ]);
     cpu.a = 0x01;
     cpu.tick(); // fetch opcode
@@ -1144,7 +1197,7 @@ fn ora() {
 #[test]
 fn rol() {
     let mut cpu = setup(&[
-        0x2A, 0x43, // ROL A // next byte is discarded
+        0x2A,       // ROL A // next byte is discarded
         0x26, 0x44, // ROL $44
         0x36, 0x64, // ROL $64,X
     ]);
@@ -1188,9 +1241,9 @@ fn rol() {
 #[test]
 fn ror() {
     let mut cpu = setup(&[
-        0x6A, 0x43, // ROR A // next byte is discarded
-        0x6A, 0x44, // ROR A
-        0x6A, 0x64, // ROR A
+        0x6A, // ROR A // next byte is discarded
+        0x6A, // ROR A
+        0x6A, // ROR A
     ]);
     cpu.a = 0x01;
     cpu.tick(); // fetch opcode
@@ -1304,6 +1357,45 @@ fn sbc() {
     assert!(!cpu.p.contains(Flags::N));
     assert!(cpu.p.contains(Flags::V));
     assert!(cpu.p.contains(Flags::C));
+}
+
+#[test]
+fn sec() {
+    let mut cpu = setup(&[
+        0x38, 0x45, // SEC // operand is discarded
+    ]);
+    cpu.p.set(Flags::C, false);
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // do nothing
+    assert!(!cpu.p.contains(Flags::C));
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert!(cpu.p.contains(Flags::C));
+}
+
+#[test]
+fn sed() {
+    let mut cpu = setup(&[
+        0xf8, 0x45, // SED // operand is discarded
+    ]);
+    cpu.p.set(Flags::D, false);
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // do nothing
+    assert!(!cpu.p.contains(Flags::D));
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert!(cpu.p.contains(Flags::D));
+}
+
+#[test]
+fn sei() {
+    let mut cpu = setup(&[
+        0x78, 0x45, // SEI // operand is discarded
+    ]);
+    cpu.p.set(Flags::I, false);
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // do nothing
+    assert!(!cpu.p.contains(Flags::I));
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert!(cpu.p.contains(Flags::I));
 }
 
 #[test]

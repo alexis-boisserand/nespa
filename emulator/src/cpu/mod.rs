@@ -93,7 +93,11 @@ impl Cpu {
             CpuState::FetchValue => {
                 self.value0 = self.read_mem(self.pc);
                 self.value1 = 0;
-                self.increment_pc(); // in the case of single byte instruction, the following byte is read and discarded
+                //self.increment_pc(); // in the case of single byte instruction, the following byte is read and discarded
+                match self.opcode.addressing_mode {
+                    AddressingMode::Accumulator | AddressingMode::Implied => {},
+                    _ => self.increment_pc()
+                }
                 match self.opcode.addressing_mode {
                     AddressingMode::Accumulator => {
                         if let Instruction::ReadWrite(instruction) = self.opcode.instruction {
@@ -291,10 +295,18 @@ impl Cpu {
             }
             CpuState::ImpliedInstruction(instruction) => {
                 match instruction {
+                    opcodes::ImpliedInstruction::Clc => self.clc(),
+                    opcodes::ImpliedInstruction::Cld => self.cld(),
+                    opcodes::ImpliedInstruction::Cli => self.cli(),
+                    opcodes::ImpliedInstruction::Clv => self.clv(),
                     opcodes::ImpliedInstruction::Dex => self.dex(),
                     opcodes::ImpliedInstruction::Dey => self.dey(),
                     opcodes::ImpliedInstruction::Iny => self.iny(),
                     opcodes::ImpliedInstruction::Inx => self.inx(),
+                    opcodes::ImpliedInstruction::Nop => {}
+                    opcodes::ImpliedInstruction::Sec => self.sec(),
+                    opcodes::ImpliedInstruction::Sed => self.sed(),
+                    opcodes::ImpliedInstruction::Sei => self.sei(),
                 }
                 self.fetch_opcode();
                 self.increment_pc();
@@ -424,6 +436,22 @@ impl Cpu {
         self.p.contains(Flags::V)
     }
 
+    fn clc(&mut self) {
+        self.p.set(Flags::C, false);
+    }
+
+    fn cld(&mut self) {
+        self.p.set(Flags::D, false);
+    }
+
+    fn cli(&mut self) {
+        self.p.set(Flags::I, false);
+    }
+
+    fn clv(&mut self) {
+        self.p.set(Flags::V, false);
+    }
+
     fn cmp(&mut self) {
         let (value, overflow) = self.a.overflowing_sub(self.value0);
         self.set_zero_and_negative_flags(value);
@@ -524,5 +552,17 @@ impl Cpu {
         self.p.set(Flags::V, (a ^ m) & (a ^ value) & 0x0080 != 0);
         self.p.set(Flags::C, value & 0x0100 == 0);
         set_reg!(self, a, value as u8);
+    }
+
+    fn sec(&mut self) {
+        self.p.set(Flags::C, true);
+    }
+
+    fn sed(&mut self) {
+        self.p.set(Flags::D, true);
+    }
+
+    fn sei(&mut self) {
+        self.p.set(Flags::I, true);
     }
 }
