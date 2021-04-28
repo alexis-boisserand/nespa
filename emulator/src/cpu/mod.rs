@@ -292,6 +292,9 @@ impl Cpu {
             CpuState::ImpliedInstruction(instruction) => {
                 match instruction {
                     opcodes::ImpliedInstruction::Dex => self.dex(),
+                    opcodes::ImpliedInstruction::Dey => self.dey(),
+                    opcodes::ImpliedInstruction::Iny => self.iny(),
+                    opcodes::ImpliedInstruction::Inx => self.inx(),
                 }
                 self.fetch_opcode();
                 self.increment_pc();
@@ -437,6 +440,10 @@ impl Cpu {
         self.x = self.dec(self.x);
     }
 
+    fn dey(&mut self) {
+        self.y = self.dec(self.y);
+    }
+
     fn eor(&mut self) {
         set_reg!(self, a, self.a ^ self.value0);
     }
@@ -445,6 +452,14 @@ impl Cpu {
         let value = value.wrapping_add(1);
         self.set_zero_and_negative_flags(value);
         value
+    }
+
+    fn inx(&mut self) {
+        self.x = self.inc(self.x);
+    }
+
+    fn iny(&mut self) {
+        self.y = self.inc(self.y);
     }
 
     fn lda(&mut self) {

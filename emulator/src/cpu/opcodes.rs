@@ -90,7 +90,7 @@ impl From<u8> for OpCode {
             0x84 => (Write(Sty), ZeroPage),
             0x85 => (Write(Sta), ZeroPage),
             0x86 => (Write(Stx), ZeroPage),
-            0x88 => (DEY, AddressingMode::Implied),
+            0x88 => (Instruction::Implied(Dey), AddressingMode::Implied),
             0x8a => (TXA, AddressingMode::Implied),
             0x8c => (Write(Sty), Absolute),
             0x8d => (Write(Sta), Absolute),
@@ -132,7 +132,7 @@ impl From<u8> for OpCode {
             0xc4 => (CPY, ZeroPage),
             0xc5 => (Read(Cmp), ZeroPage),
             0xc6 => (ReadWrite(Dec), ZeroPage),
-            0xc8 => (INY, AddressingMode::Implied),
+            0xc8 => (Instruction::Implied(Iny), AddressingMode::Implied),
             0xc9 => (Read(Cmp), Immediate),
             0xca => (Instruction::Implied(Dex), AddressingMode::Implied),
             0xcc => (CPY, Absolute),
@@ -151,7 +151,7 @@ impl From<u8> for OpCode {
             0xe4 => (CPX, ZeroPage),
             0xe5 => (Read(Sbc), ZeroPage),
             0xe6 => (ReadWrite(Inc), ZeroPage),
-            0xe8 => (INX, AddressingMode::Implied),
+            0xe8 => (Instruction::Implied(Inx), AddressingMode::Implied),
             0xe9 => (Read(Sbc), Immediate),
             0xea => (NOP, AddressingMode::Implied),
             0xec => (CPX, Absolute),
@@ -188,9 +188,6 @@ pub enum Instruction {
     CLV,
     CPX,
     CPY,
-    DEY,
-    INX,
-    INY,
     JMP,
     JSR,
     NOP,
@@ -257,6 +254,9 @@ pub enum BranchInstruction {
 #[derive(Debug, Copy, Clone)]
 pub enum ImpliedInstruction {
     Dex,
+    Dey,
+    Inx,
+    Iny,
 }
 
 #[derive(Debug, Copy, Clone)]
