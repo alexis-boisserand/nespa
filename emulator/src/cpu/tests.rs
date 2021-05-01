@@ -1287,6 +1287,62 @@ fn php() {
 }
 
 #[test]
+fn pla() {
+    let mut cpu = setup(&[
+        0x68, // PLA
+        0x68, // PLA
+        0x68, // PLA
+    ]);
+    
+    cpu.stack_push(0x22);
+    cpu.stack_push(0x00);
+    cpu.stack_push(0x89);
+
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // read next opcode but do nothing
+    cpu.tick(); // increment s
+    assert_eq!(cpu.a, 0x00);
+    cpu.tick(); // pull value from stack and store it into a
+    assert_eq!(cpu.a, 0x89);
+    assert!(cpu.p.contains(Flags::N));
+    assert!(!cpu.p.contains(Flags::Z));
+    cpu.tick(); // fetch opcode
+
+    cpu.tick(); // read next opcode but do nothing
+    cpu.tick(); // increment s
+    assert_eq!(cpu.a, 0x89);
+    cpu.tick(); // pull value from stack and store it into a
+    assert_eq!(cpu.a, 0x00);
+    assert!(!cpu.p.contains(Flags::N));
+    assert!(cpu.p.contains(Flags::Z));
+    cpu.tick(); // fetch opcode
+
+    cpu.tick(); // read next opcode but do nothing
+    cpu.tick(); // increment s
+    assert_eq!(cpu.a, 0x00);
+    cpu.tick(); // pull value from stack and store it into a
+    assert_eq!(cpu.a, 0x22);
+    assert!(!cpu.p.contains(Flags::N));
+    assert!(!cpu.p.contains(Flags::Z));
+    cpu.tick(); // fetch opcode
+}
+
+#[test]
+fn plp() {
+    let mut cpu = setup(&[
+        0x28, // PLP
+    ]);
+    cpu.stack_push(0x15);
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // read next opcode but do nothing
+    cpu.tick(); // increment s
+    assert_eq!(cpu.p.bits(), P_INIT_VALUE);
+    cpu.tick(); // pull value from stack and store it into a
+    assert_eq!(cpu.p.bits(), 0x15);
+    cpu.tick(); // fetch opcode
+}
+
+#[test]
 fn rol() {
     let mut cpu = setup(&[
         0x2A, // ROL A // next byte is discarded

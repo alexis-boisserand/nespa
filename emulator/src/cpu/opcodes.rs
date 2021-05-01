@@ -11,6 +11,7 @@ impl From<u8> for OpCode {
         use ImpliedInstruction::*;
         use Instruction::*;
         use PushInstruction::*;
+        use PullInstruction::*;
         use ReadInstruction::*;
         use ReadWriteInstruction::*;
         use WriteInstruction::*;
@@ -37,7 +38,7 @@ impl From<u8> for OpCode {
             0x24 => (Read(Bit), ZeroPage),
             0x25 => (Read(And), ZeroPage),
             0x26 => (ReadWrite(Rol), ZeroPage),
-            0x28 => (PLP, AddressingMode::Implied),
+            0x28 => (Pull(Plp), AddressingMode::Implied),
             0x29 => (Read(And), Immediate),
             0x2a => (ReadWrite(Rol), Accumulator),
             0x2c => (Read(Bit), Absolute),
@@ -73,7 +74,7 @@ impl From<u8> for OpCode {
             0x61 => (Read(Adc), IndirectX),
             0x65 => (Read(Adc), ZeroPage),
             0x66 => (ReadWrite(Ror), ZeroPage),
-            0x68 => (PLA, AddressingMode::Implied),
+            0x68 => (Pull(Pla), AddressingMode::Implied),
             0x69 => (Read(Adc), Immediate),
             0x6a => (ReadWrite(Ror), Accumulator),
             0x6c => (JMP, Indirect),
@@ -183,11 +184,10 @@ pub enum Instruction {
     Branch(BranchInstruction),
     Implied(ImpliedInstruction),
     Push(PushInstruction),
+    Pull(PullInstruction),
     BRK,
     JMP,
     JSR,
-    PLA,
-    PLP,
     RTI,
     RTS,
 }
@@ -263,6 +263,12 @@ pub enum ImpliedInstruction {
 pub enum PushInstruction {
     Pha,
     Php,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum PullInstruction {
+    Pla,
+    Plp,
 }
 
 #[derive(Debug, Copy, Clone)]

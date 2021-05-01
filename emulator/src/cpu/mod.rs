@@ -48,6 +48,8 @@ enum CpuState {
     BranchInstruction0(opcodes::BranchInstruction),
     ImpliedInstruction(opcodes::ImpliedInstruction),
     PushInstruction(opcodes::PushInstruction),
+    PullInstruction0(opcodes::PullInstruction),
+    PullInstruction1(opcodes::PullInstruction),
     BranchInstruction1(bool),
     WriteBack(u16),
 }
@@ -75,7 +77,7 @@ impl Cpu {
             y: 0,
             pc: 0, // pc must be read at addresses 0xFFFC and 0xFFFD
             s: S_INIT_VALUE,
-            p: Flags::from_bits(P_INIT_VALUE).unwrap(),
+            p: Flags::from_bits_truncate(P_INIT_VALUE),
             mem: [0; 0xFFFF],
             state: CpuState::FetchOpCode,
             // actual initial values don't matter the next 3 fields
@@ -130,6 +132,8 @@ impl Cpu {
                             CpuState::ImpliedInstruction(instruction)
                         } else if let Instruction::Push(instruction) = self.opcode.instruction {
                             CpuState::PushInstruction(instruction)
+                        } else if let Instruction::Pull(instruction) = self.opcode.instruction {
+                            CpuState::PullInstruction0(instruction)
                         } else {
                             unreachable!()
                         }
@@ -331,12 +335,23 @@ impl Cpu {
                 }
                 CpuState::FetchOpCode
             }
+            CpuState::PullInstruction0(instruction) => {
+                self.s = self.s.wrapping_add(1);
+                CpuState::PullInstruction1(instruction)
+            }
+            CpuState::PullInstruction1(instruction) => {
+                match instruction {
+                    opcodes::PullInstruction::Pla => self.pla(),
+                    opcodes::PullInstruction::Plp => self.plp(),
+                }
+                CpuState::FetchOpCode
+            }
         };
     }
 
     pub fn reset(&mut self) {
         // TODO initialize other registers
-        self.p = Flags::from_bits(P_INIT_VALUE).unwrap();
+        self.p = Flags::from_bits_truncate(P_INIT_VALUE);
         self.pc = self.read_mem_u16(RESET_VECTOR);
         self.state = CpuState::FetchOpCode;
     }
@@ -379,7 +394,7 @@ impl Cpu {
     }
 
     fn stack_pull(&mut self) -> u8 {
-        self.s = self.s.wrapping_add(1);
+        // note: it is assumed that s has been previously incremented
         let address = STACK_ADDRESS_OFFSET + self.s as u16;
         self.read_mem(address)
     }
@@ -574,6 +589,15 @@ impl Cpu {
 
     fn php(&mut self) {
         self.stack_push(self.p.bits());
+    }
+
+    fn pla(&mut self) {
+        self.a = self.stack_pull();
+        self.set_zero_and_negative_flags(self.a);
+    }
+
+    fn plp(&mut self) {
+        self.p = Flags::from_bits_truncate(self.stack_pull());
     }
 
     fn rol(&mut self, mut value: u8) -> u8 {
