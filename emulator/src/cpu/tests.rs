@@ -301,7 +301,7 @@ fn and_indirect_y() {
 #[test]
 fn asl() {
     let mut cpu = setup(&[
-        0x0A,       // ASL A // next byte is discarded
+        0x0A, // ASL A // next byte is discarded
         0x06, 0x44, // ASL $44
         0x16, 0x64, // ASL $64,X
     ]);
@@ -759,7 +759,7 @@ fn bvs() {
 #[test]
 fn clc() {
     let mut cpu = setup(&[
-        0x18, 0x45, // CLC // operand is discarded
+        0x18, // CLC
     ]);
     cpu.p.set(Flags::C, true);
     cpu.tick(); // fetch opcode
@@ -772,7 +772,7 @@ fn clc() {
 #[test]
 fn cld() {
     let mut cpu = setup(&[
-        0xd8, 0x45, // CLD // operand is discarded
+        0xd8, // CLD
     ]);
     cpu.p.set(Flags::D, true);
     cpu.tick(); // fetch opcode
@@ -785,7 +785,7 @@ fn cld() {
 #[test]
 fn cli() {
     let mut cpu = setup(&[
-        0x58, 0x45, // CLI // operand is discarded
+        0x58, // CLI
     ]);
     cpu.p.set(Flags::I, true);
     cpu.tick(); // fetch opcode
@@ -798,7 +798,7 @@ fn cli() {
 #[test]
 fn clv() {
     let mut cpu = setup(&[
-        0xb8, 0x45, // CLV // operand is discarded
+        0xb8, // CLV
     ]);
     cpu.p.set(Flags::V, true);
     cpu.tick(); // fetch opcode
@@ -872,7 +872,7 @@ fn dec() {
 #[test]
 fn dex() {
     let mut cpu = setup(&[
-        0xCA, // DEX // operand is discarded
+        0xCA, // DEX
         0xCA, // DEX
     ]);
     cpu.x = 0x01;
@@ -896,7 +896,7 @@ fn dex() {
 #[test]
 fn dey() {
     let mut cpu = setup(&[
-        0x88, // DEX // operand is discarded
+        0x88, // DEX
         0x88, // DEX
     ]);
     cpu.y = 0x01;
@@ -961,7 +961,7 @@ fn inc() {
 #[test]
 fn inx() {
     let mut cpu = setup(&[
-        0xE8, // INX // operand is ignored
+        0xE8, // INX
         0xE8, // INX
         0xE8, // INX
     ]);
@@ -995,7 +995,7 @@ fn inx() {
 #[test]
 fn iny() {
     let mut cpu = setup(&[
-        0xC8, // INY // operand is ignored
+        0xC8, // INY
         0xC8, // INY
         0xC8, // INY
     ]);
@@ -1197,7 +1197,7 @@ fn ora() {
 #[test]
 fn rol() {
     let mut cpu = setup(&[
-        0x2A,       // ROL A // next byte is discarded
+        0x2A, // ROL A // next byte is discarded
         0x26, 0x44, // ROL $44
         0x36, 0x64, // ROL $64,X
     ]);
@@ -1362,7 +1362,7 @@ fn sbc() {
 #[test]
 fn sec() {
     let mut cpu = setup(&[
-        0x38, 0x45, // SEC // operand is discarded
+        0x38, // SEC
     ]);
     cpu.p.set(Flags::C, false);
     cpu.tick(); // fetch opcode
@@ -1375,7 +1375,7 @@ fn sec() {
 #[test]
 fn sed() {
     let mut cpu = setup(&[
-        0xf8, 0x45, // SED // operand is discarded
+        0xf8, // SED
     ]);
     cpu.p.set(Flags::D, false);
     cpu.tick(); // fetch opcode
@@ -1388,7 +1388,7 @@ fn sed() {
 #[test]
 fn sei() {
     let mut cpu = setup(&[
-        0x78, 0x45, // SEI // operand is discarded
+        0x78, // SEI
     ]);
     cpu.p.set(Flags::I, false);
     cpu.tick(); // fetch opcode
@@ -1435,4 +1435,202 @@ fn sty() {
     cpu.tick(); // write register to address
     cpu.tick(); // fetch the next opcode
     assert_eq!(cpu.read_mem(0x0016), 0x78);
+}
+
+#[test]
+fn tax() {
+    let mut cpu = setup(&[
+        0xAA, // TAX
+        0xAA, // TAX
+        0xAA, // TAX
+    ]);
+    cpu.x = 0x90;
+    cpu.a = 0;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // do nothing
+    assert_eq!(cpu.x, 0x90);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.x, 0x00);
+    assert!(cpu.p.contains(Flags::Z));
+    assert!(!cpu.p.contains(Flags::N));
+
+    cpu.a = 0x88;
+    cpu.tick(); // do nothing
+    assert_eq!(cpu.x, 0x00);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.x, 0x88);
+    assert!(!cpu.p.contains(Flags::Z));
+    assert!(cpu.p.contains(Flags::N));
+
+    cpu.a = 0x02;
+    cpu.tick(); // do nothing
+    assert_eq!(cpu.x, 0x88);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.x, 0x02);
+    assert!(!cpu.p.contains(Flags::Z));
+    assert!(!cpu.p.contains(Flags::N));
+}
+
+#[test]
+fn tay() {
+    let mut cpu = setup(&[
+        0xA8, // TAY
+        0xA8, // TAY
+        0xA8, // TAY
+    ]);
+    cpu.y = 0x90;
+    cpu.a = 0;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // do nothing
+    assert_eq!(cpu.y, 0x90);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.y, 0x00);
+    assert!(cpu.p.contains(Flags::Z));
+    assert!(!cpu.p.contains(Flags::N));
+
+    cpu.a = 0x88;
+    cpu.tick(); // do nothing
+    assert_eq!(cpu.y, 0x00);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.y, 0x88);
+    assert!(!cpu.p.contains(Flags::Z));
+    assert!(cpu.p.contains(Flags::N));
+
+    cpu.a = 0x02;
+    cpu.tick(); // do nothing
+    assert_eq!(cpu.y, 0x88);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.y, 0x02);
+    assert!(!cpu.p.contains(Flags::Z));
+    assert!(!cpu.p.contains(Flags::N));
+}
+
+#[test]
+fn tsx() {
+    let mut cpu = setup(&[
+        0xBA, // TSX
+        0xBA, // TSX
+        0xBA, // TSX
+    ]);
+    cpu.x = 0x90;
+    cpu.s = 0;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // do nothing
+    assert_eq!(cpu.x, 0x90);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.x, 0x00);
+    assert!(cpu.p.contains(Flags::Z));
+    assert!(!cpu.p.contains(Flags::N));
+
+    cpu.s = 0x88;
+    cpu.tick(); // do nothing
+    assert_eq!(cpu.x, 0x00);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.x, 0x88);
+    assert!(!cpu.p.contains(Flags::Z));
+    assert!(cpu.p.contains(Flags::N));
+
+    cpu.s = 0x02;
+    cpu.tick(); // do nothing
+    assert_eq!(cpu.x, 0x88);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.x, 0x02);
+    assert!(!cpu.p.contains(Flags::Z));
+    assert!(!cpu.p.contains(Flags::N));
+}
+
+#[test]
+fn txa() {
+    let mut cpu = setup(&[
+        0x8A, // TXA
+        0x8A, // TXA
+        0x8A, // TXA
+    ]);
+    cpu.a = 0x90;
+    cpu.x = 0;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // do nothing
+    assert_eq!(cpu.a, 0x90);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.a, 0x00);
+    assert!(cpu.p.contains(Flags::Z));
+    assert!(!cpu.p.contains(Flags::N));
+
+    cpu.x = 0x88;
+    cpu.tick(); // do nothing
+    assert_eq!(cpu.a, 0x00);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.a, 0x88);
+    assert!(!cpu.p.contains(Flags::Z));
+    assert!(cpu.p.contains(Flags::N));
+
+    cpu.x = 0x02;
+    cpu.tick(); // do nothing
+    assert_eq!(cpu.a, 0x88);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.a, 0x02);
+    assert!(!cpu.p.contains(Flags::Z));
+    assert!(!cpu.p.contains(Flags::N));
+}
+
+#[test]
+fn txs() {
+    let mut cpu = setup(&[
+        0x9A, // TXS
+        0x9A, // TXS
+        0x9A, // TXS
+    ]);
+    cpu.s = 0x90;
+    cpu.x = 0;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // do nothing
+    assert_eq!(cpu.s, 0x90);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.s, 0x00);
+
+    cpu.x = 0x88;
+    cpu.tick(); // do nothing
+    assert_eq!(cpu.s, 0x00);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.s, 0x88);
+
+    cpu.x = 0x02;
+    cpu.tick(); // do nothing
+    assert_eq!(cpu.s, 0x88);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.s, 0x02);
+}
+
+#[test]
+fn tya() {
+    let mut cpu = setup(&[
+        0x98, // TYA
+        0x98, // TYA
+        0x98, // TYA
+    ]);
+    cpu.a = 0x90;
+    cpu.y = 0;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // do nothing
+    assert_eq!(cpu.a, 0x90);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.a, 0x00);
+    assert!(cpu.p.contains(Flags::Z));
+    assert!(!cpu.p.contains(Flags::N));
+
+    cpu.y = 0x88;
+    cpu.tick(); // do nothing
+    assert_eq!(cpu.a, 0x00);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.a, 0x88);
+    assert!(!cpu.p.contains(Flags::Z));
+    assert!(cpu.p.contains(Flags::N));
+
+    cpu.y = 0x02;
+    cpu.tick(); // do nothing
+    assert_eq!(cpu.a, 0x88);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.a, 0x02);
+    assert!(!cpu.p.contains(Flags::Z));
+    assert!(!cpu.p.contains(Flags::N));
 }

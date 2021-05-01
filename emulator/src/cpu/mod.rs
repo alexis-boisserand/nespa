@@ -95,8 +95,8 @@ impl Cpu {
                 self.value1 = 0;
                 //self.increment_pc(); // in the case of single byte instruction, the following byte is read and discarded
                 match self.opcode.addressing_mode {
-                    AddressingMode::Accumulator | AddressingMode::Implied => {},
-                    _ => self.increment_pc()
+                    AddressingMode::Accumulator | AddressingMode::Implied => {}
+                    _ => self.increment_pc(),
                 }
                 match self.opcode.addressing_mode {
                     AddressingMode::Accumulator => {
@@ -307,6 +307,12 @@ impl Cpu {
                     opcodes::ImpliedInstruction::Sec => self.sec(),
                     opcodes::ImpliedInstruction::Sed => self.sed(),
                     opcodes::ImpliedInstruction::Sei => self.sei(),
+                    opcodes::ImpliedInstruction::Tax => self.tax(),
+                    opcodes::ImpliedInstruction::Tay => self.tay(),
+                    opcodes::ImpliedInstruction::Tsx => self.tsx(),
+                    opcodes::ImpliedInstruction::Txa => self.txa(),
+                    opcodes::ImpliedInstruction::Txs => self.txs(),
+                    opcodes::ImpliedInstruction::Tya => self.tya(),
                 }
                 self.fetch_opcode();
                 self.increment_pc();
@@ -564,5 +570,29 @@ impl Cpu {
 
     fn sei(&mut self) {
         self.p.set(Flags::I, true);
+    }
+
+    fn tax(&mut self) {
+        set_reg!(self, x, self.a);
+    }
+
+    fn tay(&mut self) {
+        set_reg!(self, y, self.a);
+    }
+
+    fn tsx(&mut self) {
+        set_reg!(self, x, self.s);
+    }
+
+    fn txa(&mut self) {
+        set_reg!(self, a, self.x);
+    }
+
+    fn txs(&mut self) {
+        self.s = self.x;
+    }
+
+    fn tya(&mut self) {
+        set_reg!(self, a, self.y);
     }
 }
