@@ -235,6 +235,8 @@ impl Cpu {
                     opcodes::ReadInstruction::Ldy => self.ldy(),
                     opcodes::ReadInstruction::Ora => self.ora(),
                     opcodes::ReadInstruction::Sbc => self.sbc(),
+                    opcodes::ReadInstruction::Cpx => self.cpx(),
+                    opcodes::ReadInstruction::Cpy => self.cpy(),
                 };
                 self.fetch_opcode();
                 self.increment_pc();
@@ -460,6 +462,18 @@ impl Cpu {
 
     fn cmp(&mut self) {
         let (value, overflow) = self.a.overflowing_sub(self.value0);
+        self.set_zero_and_negative_flags(value);
+        self.p.set(Flags::C, !overflow);
+    }
+
+    fn cpx(&mut self) {
+        let (value, overflow) = self.x.overflowing_sub(self.value0);
+        self.set_zero_and_negative_flags(value);
+        self.p.set(Flags::C, !overflow);
+    }
+
+    fn cpy(&mut self) {
+        let (value, overflow) = self.y.overflowing_sub(self.value0);
         self.set_zero_and_negative_flags(value);
         self.p.set(Flags::C, !overflow);
     }

@@ -840,6 +840,70 @@ fn cmp() {
 }
 
 #[test]
+fn cpx() {
+    let mut cpu = setup(&[
+        0xE0, 0x43, // CPX #$43
+        0xE0, 0x54, // CPX #$54
+        0xE0, 0x20, // CPX #$20
+    ]);
+
+    cpu.x = 0x43;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch operand
+    cpu.tick(); // execute and and fetch the next opcode at the same time
+    assert_eq!(cpu.x, 0x43);
+    assert!(!cpu.p.contains(Flags::N));
+    assert!(cpu.p.contains(Flags::Z));
+    assert!(cpu.p.contains(Flags::C));
+
+    cpu.tick(); // fetch operand
+    cpu.tick(); // execute and and fetch the next opcode at the same time
+    assert_eq!(cpu.x, 0x43);
+    assert!(cpu.p.contains(Flags::N));
+    assert!(!cpu.p.contains(Flags::Z));
+    assert!(!cpu.p.contains(Flags::C));
+
+    cpu.tick(); // fetch operand
+    cpu.tick(); // execute and and fetch the next opcode at the same time
+    assert_eq!(cpu.x, 0x43);
+    assert!(!cpu.p.contains(Flags::N));
+    assert!(!cpu.p.contains(Flags::Z));
+    assert!(cpu.p.contains(Flags::C));
+}
+
+#[test]
+fn cpy() {
+    let mut cpu = setup(&[
+        0xC0, 0x43, // CPY #$43
+        0xC0, 0x54, // CPY #$54
+        0xC0, 0x20, // CPY #$20
+    ]);
+
+    cpu.y = 0x43;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch operand
+    cpu.tick(); // execute and and fetch the next opcode at the same time
+    assert_eq!(cpu.y, 0x43);
+    assert!(!cpu.p.contains(Flags::N));
+    assert!(cpu.p.contains(Flags::Z));
+    assert!(cpu.p.contains(Flags::C));
+
+    cpu.tick(); // fetch operand
+    cpu.tick(); // execute and and fetch the next opcode at the same time
+    assert_eq!(cpu.y, 0x43);
+    assert!(cpu.p.contains(Flags::N));
+    assert!(!cpu.p.contains(Flags::Z));
+    assert!(!cpu.p.contains(Flags::C));
+
+    cpu.tick(); // fetch operand
+    cpu.tick(); // execute and and fetch the next opcode at the same time
+    assert_eq!(cpu.y, 0x43);
+    assert!(!cpu.p.contains(Flags::N));
+    assert!(!cpu.p.contains(Flags::Z));
+    assert!(cpu.p.contains(Flags::C));
+}
+
+#[test]
 fn dec() {
     let mut cpu = setup(&[
         0xC6, 0x43, // DEC $43
