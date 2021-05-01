@@ -1259,6 +1259,34 @@ fn ora() {
 }
 
 #[test]
+fn pha() {
+    let mut cpu = setup(&[
+        0x48, // PHA
+    ]);
+    cpu.a = 0x56;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // read next opcode but do nothing
+    assert_eq!(cpu.stack_peek(), 0x00);
+    cpu.tick(); // write a on stack and decrement s
+    assert_eq!(cpu.stack_peek(), 0x56);
+    cpu.tick(); // fetch next opcode
+}
+
+#[test]
+fn php() {
+    let mut cpu = setup(&[
+        0x08, // PHP
+    ]);
+    cpu.p = Flags::from_bits(0x34).unwrap();
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // read next opcode but do nothing
+    assert_eq!(cpu.stack_peek(), 0x00);
+    cpu.tick(); // write p on stack and decrement s
+    assert_eq!(cpu.stack_peek(), 0x34);
+    cpu.tick(); // fetch next opcode
+}
+
+#[test]
 fn rol() {
     let mut cpu = setup(&[
         0x2A, // ROL A // next byte is discarded

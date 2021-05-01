@@ -12,6 +12,7 @@ macro_rules! set_reg {
     };
 }
 
+const STACK_ADDRESS_OFFSET: u16 = 0x0100;
 const P_INIT_VALUE: u8 = 0x34;
 const S_INIT_VALUE: u8 = 0xFD;
 const RESET_VECTOR: u16 = 0xFFFC;
@@ -46,6 +47,7 @@ enum CpuState {
     ReadWriteInstruction(opcodes::ReadWriteInstruction, u16),
     BranchInstruction0(opcodes::BranchInstruction),
     ImpliedInstruction(opcodes::ImpliedInstruction),
+    PushInstruction(opcodes::PushInstruction),
     BranchInstruction1(bool),
     WriteBack(u16),
 }
@@ -126,6 +128,8 @@ impl Cpu {
                     AddressingMode::Implied => {
                         if let Instruction::Implied(instruction) = self.opcode.instruction {
                             CpuState::ImpliedInstruction(instruction)
+                        } else if let Instruction::Push(instruction) = self.opcode.instruction {
+                            CpuState::PushInstruction(instruction)
                         } else {
                             unreachable!()
                         }
@@ -320,6 +324,13 @@ impl Cpu {
                 self.increment_pc();
                 CpuState::FetchValue
             }
+            CpuState::PushInstruction(instruction) => {
+                match instruction {
+                    opcodes::PushInstruction::Pha => self.pha(),
+                    opcodes::PushInstruction::Php => self.php(),
+                }
+                CpuState::FetchOpCode
+            }
         };
     }
 
@@ -354,6 +365,29 @@ impl Cpu {
             .iter_mut()
             .zip(value.iter())
             .for_each(|(dest, src)| *dest = *src);
+    }
+
+    #[cfg(test)]
+    fn stack_peek(&mut self) -> u8 {
+        // 6502 uses a descending (grows by decrementing address)
+        // empty (stack points to the next value that will be stored) stack
+        // stack is in RAM in the address range [0x0100;0x01ff]
+        // stack pointer is only 8 bits
+        // which means the current stack address is actually 0x0100 + s
+        let address = STACK_ADDRESS_OFFSET + self.s.wrapping_add(1) as u16;
+        self.read_mem(address)
+    }
+
+    fn stack_pull(&mut self) -> u8 {
+        self.s = self.s.wrapping_add(1);
+        let address = STACK_ADDRESS_OFFSET + self.s as u16;
+        self.read_mem(address)
+    }
+
+    fn stack_push(&mut self, value: u8) {
+        let address = STACK_ADDRESS_OFFSET + self.s as u16;
+        self.write_mem(address, value);
+        self.s = self.s.wrapping_sub(1);
     }
 
     fn fetch_opcode(&mut self) {
@@ -532,6 +566,14 @@ impl Cpu {
 
     fn ora(&mut self) {
         set_reg!(self, a, self.a | self.value0);
+    }
+
+    fn pha(&mut self) {
+        self.stack_push(self.a);
+    }
+
+    fn php(&mut self) {
+        self.stack_push(self.p.bits());
     }
 
     fn rol(&mut self, mut value: u8) -> u8 {

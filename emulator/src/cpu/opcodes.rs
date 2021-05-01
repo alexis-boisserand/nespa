@@ -10,6 +10,7 @@ impl From<u8> for OpCode {
         use BranchInstruction::*;
         use ImpliedInstruction::*;
         use Instruction::*;
+        use PushInstruction::*;
         use ReadInstruction::*;
         use ReadWriteInstruction::*;
         use WriteInstruction::*;
@@ -18,7 +19,7 @@ impl From<u8> for OpCode {
             0x01 => (Read(Ora), IndirectX),
             0x05 => (Read(Ora), ZeroPage),
             0x06 => (ReadWrite(Asl), ZeroPage),
-            0x08 => (PHP, AddressingMode::Implied),
+            0x08 => (Push(Php), AddressingMode::Implied),
             0x09 => (Read(Ora), Immediate),
             0x0a => (ReadWrite(Asl), Accumulator),
             0x0d => (Read(Ora), Absolute),
@@ -54,7 +55,7 @@ impl From<u8> for OpCode {
             0x41 => (Read(Eor), IndirectX),
             0x45 => (Read(Eor), ZeroPage),
             0x46 => (ReadWrite(Lsr), ZeroPage),
-            0x48 => (PHA, AddressingMode::Implied),
+            0x48 => (Push(Pha), AddressingMode::Implied),
             0x49 => (Read(Eor), Immediate),
             0x4a => (ReadWrite(Lsr), Accumulator),
             0x4c => (JMP, Absolute),
@@ -181,11 +182,10 @@ pub enum Instruction {
     ReadWrite(ReadWriteInstruction),
     Branch(BranchInstruction),
     Implied(ImpliedInstruction),
+    Push(PushInstruction),
     BRK,
     JMP,
     JSR,
-    PHA,
-    PHP,
     PLA,
     PLP,
     RTI,
@@ -205,7 +205,7 @@ pub enum ReadInstruction {
     Cmp,
     Bit,
     Cpx,
-    Cpy
+    Cpy,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -257,6 +257,12 @@ pub enum ImpliedInstruction {
     Txa,
     Txs,
     Tya,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum PushInstruction {
+    Pha,
+    Php,
 }
 
 #[derive(Debug, Copy, Clone)]
