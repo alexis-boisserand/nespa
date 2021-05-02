@@ -16,7 +16,7 @@ impl From<u8> for OpCode {
         use ReadWriteInstruction::*;
         use WriteInstruction::*;
         let (instruction, addressing_mode) = match opcode {
-            0x00 => (BRK, AddressingMode::Implied),
+            0x00 => (Brk, AddressingMode::Implied),
             0x01 => (Read(Ora), IndirectX),
             0x05 => (Read(Ora), ZeroPage),
             0x06 => (ReadWrite(Asl), ZeroPage),
@@ -185,7 +185,7 @@ pub enum Instruction {
     Implied(ImpliedInstruction),
     Push(PushInstruction),
     Pull(PullInstruction),
-    BRK,
+    Brk,
     JMP,
     JSR,
     RTI,

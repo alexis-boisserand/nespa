@@ -16,6 +16,7 @@ const STACK_ADDRESS_OFFSET: u16 = 0x0100;
 const P_INIT_VALUE: u8 = 0x34;
 const S_INIT_VALUE: u8 = 0xFD;
 const RESET_VECTOR: u16 = 0xFFFC;
+const INTERRUPT_VECTOR: u16 = 0xFFFE;
 
 bitflags! {
     struct Flags: u8 {
@@ -45,13 +46,18 @@ enum CpuState {
     IndirectY1,
     ReadInstruction(opcodes::ReadInstruction),
     ReadWriteInstruction(opcodes::ReadWriteInstruction, u16),
+    WriteBack(u16),
     BranchInstruction0(opcodes::BranchInstruction),
     ImpliedInstruction(opcodes::ImpliedInstruction),
     PushInstruction(opcodes::PushInstruction),
     PullInstruction0(opcodes::PullInstruction),
     PullInstruction1(opcodes::PullInstruction),
     BranchInstruction1(bool),
-    WriteBack(u16),
+    Brk0,
+    Brk1,
+    Brk2,
+    Brk3,
+    Brk4,
 }
 
 #[derive(Debug)]
@@ -62,7 +68,7 @@ pub struct Cpu {
     pc: u16,
     s: u8,
     p: Flags,
-    mem: [u8; 0xFFFF],
+    mem: [u8; 0x10000],
     state: CpuState,
     opcode: OpCode,
     value0: u8,
@@ -78,7 +84,7 @@ impl Cpu {
             pc: 0, // pc must be read at addresses 0xFFFC and 0xFFFD
             s: S_INIT_VALUE,
             p: Flags::from_bits_truncate(P_INIT_VALUE),
-            mem: [0; 0xFFFF],
+            mem: [0; 0x10000],
             state: CpuState::FetchOpCode,
             // actual initial values don't matter the next 3 fields
             opcode: OpCode::from(0x69),
@@ -134,6 +140,8 @@ impl Cpu {
                             CpuState::PushInstruction(instruction)
                         } else if let Instruction::Pull(instruction) = self.opcode.instruction {
                             CpuState::PullInstruction0(instruction)
+                        } else if let Instruction::Brk = self.opcode.instruction {
+                            CpuState::Brk0
                         } else {
                             unreachable!()
                         }
@@ -344,6 +352,26 @@ impl Cpu {
                     opcodes::PullInstruction::Pla => self.pla(),
                     opcodes::PullInstruction::Plp => self.plp(),
                 }
+                CpuState::FetchOpCode
+            }
+            CpuState::Brk0 => {
+                self.stack_push((self.pc >> 8) as u8);
+                CpuState::Brk1
+            }
+            CpuState::Brk1 => {
+                self.stack_push(self.pc as u8);
+                CpuState::Brk2
+            }
+            CpuState::Brk2 => {
+                self.stack_push(self.p.bits());
+                CpuState::Brk3
+            }
+            CpuState::Brk3 => {
+                self.pc = self.read_mem(INTERRUPT_VECTOR) as u16;
+                CpuState::Brk4
+            }
+            CpuState::Brk4 => {
+                self.pc |= (self.read_mem(INTERRUPT_VECTOR + 1) as u16) << 8;
                 CpuState::FetchOpCode
             }
         };

@@ -671,6 +671,35 @@ fn bpl() {
 }
 
 #[test]
+fn brk() {
+    let mut cpu = setup(&[
+        0x00 // BRK
+    ]);
+    cpu.write_mem_u16(INTERRUPT_VECTOR, 0x1328); // set up the interrupt vector to 0x2224
+    cpu.write_mem_u16(0x1328, 0xaa29); // AND #aa
+    cpu.write_mem_u16(0x1330, 0x5529); // AND #55
+    cpu.a = 0xff;
+
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // do nothing
+    cpu.tick(); // push PCH on stack
+    assert_eq!(cpu.stack_peek(), (cpu.pc >> 8) as u8);
+    cpu.tick(); // push PCL on stack
+    assert_eq!(cpu.stack_peek(), cpu.pc as u8);
+    cpu.tick(); // push P on stack
+    assert_eq!(cpu.stack_peek(), cpu.p.bits());
+    cpu.tick(); // fetch interrupt PCH
+    cpu.tick(); // fetch interrupt PCL
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch operand
+    assert_eq!(cpu.a, 0xff);
+    cpu.tick(); // execute and and fetch the next opcode at the same time
+    assert_eq!(cpu.a, 0xaa);
+    assert!(cpu.p.contains(Flags::N));
+    assert!(!cpu.p.contains(Flags::Z));
+}
+
+#[test]
 fn bvc() {
     // these instructions are set at RAM_CODE_START
     let mut cpu = setup(&[
