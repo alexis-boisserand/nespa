@@ -37,7 +37,7 @@ enum CpuState {
     Absolute(Option<u8>),
     Accumulator(opcodes::ReadWriteInstruction),
     ReadOrWrite,
-    ZeroPageX,
+    ZeroPageIndexed(u8),
     PageCrossing,
     IndirectX0,
     IndirectX1,
@@ -66,6 +66,12 @@ enum CpuState {
     Rts1,
     Rts2,
     Rts3,
+    Jsr0,
+    Jsr1,
+    Jsr2,
+    Jsr3,
+    JmpIndirect0,
+    JmpIndirect1(u16),
 }
 
 #[derive(Debug)]
@@ -112,8 +118,8 @@ impl Cpu {
                 self.value0 = self.read_mem(self.pc);
                 self.value1 = 0;
 
-                match self.opcode.addressing_mode {
-                    AddressingMode::Accumulator | AddressingMode::Implied => {}
+                match (self.opcode.addressing_mode, self.opcode.instruction) {
+                    (AddressingMode::Accumulator, _) | (AddressingMode::Implied, _) => {}
                     _ => self.increment_pc(),
                 }
 
@@ -121,15 +127,18 @@ impl Cpu {
                     (AddressingMode::Accumulator, Instruction::ReadWrite(instruction)) => {
                         CpuState::Accumulator(instruction)
                     }
+                    (AddressingMode::Accumulator, _) => unreachable!(),
                     (AddressingMode::IndirectX, _) => CpuState::IndirectX0,
                     (AddressingMode::ZeroPage, _) => CpuState::ReadOrWrite,
                     (AddressingMode::Immediate, Instruction::Read(instruction)) => {
                         CpuState::ReadInstruction(instruction)
                     }
+                    (AddressingMode::Immediate, _) => unreachable!(),
+                    (AddressingMode::Absolute, Instruction::Jsr) => CpuState::Jsr0,
                     (AddressingMode::Absolute, _) => CpuState::Absolute(None),
                     (AddressingMode::IndirectY, _) => CpuState::IndirectY0,
-                    (AddressingMode::ZeroPageX, _) => CpuState::ZeroPageX,
-                    (AddressingMode::ZeroPageY, _) => unimplemented!(),
+                    (AddressingMode::ZeroPageX, _) => CpuState::ZeroPageIndexed(self.x),
+                    (AddressingMode::ZeroPageY, _) => CpuState::ZeroPageIndexed(self.y),
                     (AddressingMode::AbsoluteY, _) => CpuState::Absolute(Some(self.y)),
                     (AddressingMode::AbsoluteX, _) => CpuState::Absolute(Some(self.x)),
                     (AddressingMode::Implied, Instruction::Implied(instruction)) => {
@@ -144,11 +153,11 @@ impl Cpu {
                     (AddressingMode::Implied, Instruction::Brk) => CpuState::Brk0,
                     (AddressingMode::Implied, Instruction::Rti) => CpuState::Rti0,
                     (AddressingMode::Implied, Instruction::Rts) => CpuState::Rts0,
+                    (AddressingMode::Implied, _) => unreachable!(),
                     (AddressingMode::Relative, Instruction::Branch(instruction)) => {
                         CpuState::BranchInstruction0(instruction)
                     }
-                    (AddressingMode::Indirect, _) => unimplemented!(),
-                    (_, _) => unreachable!(),
+                    (AddressingMode::Relative, _) => unreachable!(),
                 }
             }
             CpuState::Absolute(index) => {
@@ -164,8 +173,24 @@ impl Cpu {
                             CpuState::ReadOrWrite
                         }
                     }
-                    None => CpuState::ReadOrWrite,
+                    None => match self.opcode.instruction {
+                        Instruction::Jmp => {
+                            self.pc = (self.value1 as u16) << 8 | self.value0 as u16;
+                            CpuState::FetchOpCode
+                        }
+                        Instruction::JmpIndirect => CpuState::JmpIndirect0,
+                        _ => CpuState::ReadOrWrite,
+                    },
                 }
+            }
+            CpuState::JmpIndirect0 => {
+                let address = (self.value1 as u16) << 8 | self.value0 as u16;
+                self.pc = self.read_mem(address) as u16;
+                CpuState::JmpIndirect1(address) // 6502 bug: page cross is not handled for this instruction
+            }
+            CpuState::JmpIndirect1(address) => {
+                self.pc |= self.read_mem(address.wrapping_add(1)) as u16 >> 8;
+                CpuState::FetchOpCode
             }
             CpuState::Accumulator(instruction) => {
                 self.a = self.execute_read_write_instruction(instruction, self.a);
@@ -196,8 +221,8 @@ impl Cpu {
                     _ => unimplemented!(),
                 }
             }
-            CpuState::ZeroPageX => {
-                self.value0 = self.value0.wrapping_add(self.x);
+            CpuState::ZeroPageIndexed(register) => {
+                self.value0 = self.value0.wrapping_add(register);
                 CpuState::ReadOrWrite
             }
             CpuState::PageCrossing => {
@@ -402,6 +427,23 @@ impl Cpu {
                 self.increment_pc();
                 CpuState::FetchOpCode
             }
+            CpuState::Jsr0 => {
+                // some internal operation
+                CpuState::Jsr1
+            }
+            CpuState::Jsr1 => {
+                self.stack_push((self.pc >> 8) as u8);
+                CpuState::Jsr2
+            }
+            CpuState::Jsr2 => {
+                self.stack_push(self.pc as u8);
+                CpuState::Jsr3
+            }
+            CpuState::Jsr3 => {
+                let value = self.read_mem(self.pc) as u16;
+                self.pc = value << 8 | self.value0 as u16;
+                CpuState::FetchOpCode
+            }
         };
     }
 
@@ -510,7 +552,7 @@ impl Cpu {
 
     fn asl(&mut self, mut value: u8) -> u8 {
         let carry = value & 0x80;
-        value = value << 1;
+        value <<= 1;
         self.set_zero_and_negative_flags(value);
         self.p.set(Flags::C, carry != 0);
         value
@@ -633,7 +675,7 @@ impl Cpu {
 
     fn lsr(&mut self, mut value: u8) -> u8 {
         let carry = value & 0x01;
-        value = value >> 1;
+        value >>= 1;
         self.set_zero_and_negative_flags(value);
         self.p.set(Flags::C, carry != 0);
         value

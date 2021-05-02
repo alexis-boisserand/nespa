@@ -1141,6 +1141,35 @@ fn eor() {
 }
 
 #[test]
+fn jsr() {
+    let mut cpu = setup(&[
+        0x20, 0x32, 0x16, // JSR $1632
+    ]);
+
+    cpu.write_mem_u16(0x1632, 0xaa29); // AND #aa
+    cpu.write_mem_u16(0x1634, 0x5529); // AND #55
+
+    cpu.a = 0xff;
+
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch adl
+    cpu.tick(); // some internal operation
+    let pcl = cpu.pc as u8;
+    let pch = (cpu.pc >> 8) as u8;
+    cpu.tick(); // push pch to the stack
+    assert_eq!(cpu.stack_peek(), pch);
+    cpu.tick(); // push pcl to the stack
+    assert_eq!(cpu.stack_peek(), pcl);
+    cpu.tick(); // fetch adh
+    cpu.tick(); // fetch opcode
+
+    cpu.tick(); // fetch operand
+    assert_eq!(cpu.a, 0xff);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.a, 0xaa);
+}
+
+#[test]
 fn lda() {
     let mut cpu = setup(&[
         0xA9, 0x00, // LDA $#00
@@ -1469,11 +1498,42 @@ fn rti() {
     cpu.tick(); // increment s
     cpu.tick(); // pull p from stack, increment s
     cpu.tick(); // pull pcl from stack, increment s
-    cpu.tick(); // pull pcl from stack
+    cpu.tick(); // pull pch from stack
     assert_eq!(cpu.pc, 0x3420);
     assert_eq!(cpu.p.bits(), 0x42);
     cpu.tick(); // fetch opcode
     cpu.tick(); // fetch operand
+    assert_eq!(cpu.a, 0xff);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.a, 0xaa);
+}
+
+#[test]
+fn rts() {
+    let mut cpu = setup(&[
+        0x60, // RTS
+    ]);
+
+    // pc was supposed to point to the last byte of a JSR instruction
+    cpu.stack_push(0x34); // put pch on stack
+    cpu.stack_push(0x1f); // put pcl on stack
+
+    cpu.write_mem_u16(0x3420, 0xaa29); // AND #aa
+    cpu.write_mem_u16(0x3422, 0x5529); // AND #55
+
+    cpu.a = 0xff;
+
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // do nothing
+    cpu.tick(); // increment s
+    cpu.tick(); // pull pcl from stack, increment s
+    cpu.tick(); // pull pch from stack
+    assert_eq!(cpu.pc, 0x341f);
+    cpu.tick(); // increment pc
+    assert_eq!(cpu.pc, 0x3420);
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch operand
+    assert_eq!(cpu.a, 0xff);
     cpu.tick(); // execute instruction and fetch next opcode
     assert_eq!(cpu.a, 0xaa);
 }

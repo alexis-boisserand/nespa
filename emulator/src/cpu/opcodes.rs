@@ -33,7 +33,7 @@ impl From<u8> for OpCode {
             0x19 => (Read(Ora), AbsoluteY),
             0x1d => (Read(Ora), AbsoluteX),
             0x1e => (ReadWrite(Asl), AbsoluteX),
-            0x20 => (JSR, Absolute),
+            0x20 => (Jsr, Absolute),
             0x21 => (Read(And), IndirectX),
             0x24 => (Read(Bit), ZeroPage),
             0x25 => (Read(And), ZeroPage),
@@ -59,7 +59,7 @@ impl From<u8> for OpCode {
             0x48 => (Push(Pha), AddressingMode::Implied),
             0x49 => (Read(Eor), Immediate),
             0x4a => (ReadWrite(Lsr), Accumulator),
-            0x4c => (JMP, Absolute),
+            0x4c => (Jmp, Absolute),
             0x4d => (Read(Eor), Absolute),
             0x4e => (ReadWrite(Lsr), Absolute),
             0x50 => (Branch(Bvc), Relative),
@@ -77,7 +77,7 @@ impl From<u8> for OpCode {
             0x68 => (Pull(Pla), AddressingMode::Implied),
             0x69 => (Read(Adc), Immediate),
             0x6a => (ReadWrite(Ror), Accumulator),
-            0x6c => (JMP, Indirect),
+            0x6c => (JmpIndirect, Absolute),
             0x6d => (Read(Adc), Absolute),
             0x6e => (ReadWrite(Ror), AbsoluteX),
             0x70 => (Branch(Bvs), Relative),
@@ -188,8 +188,9 @@ pub enum Instruction {
     Brk,
     Rti,
     Rts,
-    JMP,
-    JSR,
+    Jmp,
+    JmpIndirect,
+    Jsr,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -284,6 +285,5 @@ pub enum AddressingMode {
     AbsoluteX,
     Accumulator,
     Implied,
-    Indirect,
     Relative,
 }
