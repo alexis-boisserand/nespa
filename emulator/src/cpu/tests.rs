@@ -673,7 +673,7 @@ fn bpl() {
 #[test]
 fn brk() {
     let mut cpu = setup(&[
-        0x00 // BRK
+        0x00, // BRK
     ]);
     cpu.write_mem_u16(INTERRUPT_VECTOR, 0x1328); // set up the interrupt vector to 0x2224
     cpu.write_mem_u16(0x1328, 0xaa29); // AND #aa
@@ -1322,7 +1322,7 @@ fn pla() {
         0x68, // PLA
         0x68, // PLA
     ]);
-    
+
     cpu.stack_push(0x22);
     cpu.stack_push(0x00);
     cpu.stack_push(0x89);
@@ -1450,10 +1450,9 @@ fn ror() {
 }
 
 #[test]
-fn rti()
-{
+fn rti() {
     let mut cpu = setup(&[
-        0x40 // RTI
+        0x40, // RTI
     ]);
 
     cpu.stack_push(0x34); // put pch on stack
@@ -1477,7 +1476,6 @@ fn rti()
     cpu.tick(); // fetch operand
     cpu.tick(); // execute instruction and fetch next opcode
     assert_eq!(cpu.a, 0xaa);
-
 }
 
 #[test]

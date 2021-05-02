@@ -10,8 +10,8 @@ impl From<u8> for OpCode {
         use BranchInstruction::*;
         use ImpliedInstruction::*;
         use Instruction::*;
-        use PushInstruction::*;
         use PullInstruction::*;
+        use PushInstruction::*;
         use ReadInstruction::*;
         use ReadWriteInstruction::*;
         use WriteInstruction::*;
@@ -70,7 +70,7 @@ impl From<u8> for OpCode {
             0x59 => (Read(Eor), AbsoluteY),
             0x5d => (Read(Eor), AbsoluteX),
             0x5e => (ReadWrite(Lsr), AbsoluteX),
-            0x60 => (RTS, AddressingMode::Implied),
+            0x60 => (Rts, AddressingMode::Implied),
             0x61 => (Read(Adc), IndirectX),
             0x65 => (Read(Adc), ZeroPage),
             0x66 => (ReadWrite(Ror), ZeroPage),
@@ -187,9 +187,9 @@ pub enum Instruction {
     Pull(PullInstruction),
     Brk,
     Rti,
+    Rts,
     JMP,
     JSR,
-    RTS,
 }
 
 #[derive(Debug, Copy, Clone)]

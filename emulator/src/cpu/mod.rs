@@ -61,7 +61,11 @@ enum CpuState {
     Rti0,
     Rti1,
     Rti2,
-    Rti3
+    Rti3,
+    Rts0,
+    Rts1,
+    Rts2,
+    Rts3,
 }
 
 #[derive(Debug)]
@@ -107,61 +111,44 @@ impl Cpu {
             CpuState::FetchValue => {
                 self.value0 = self.read_mem(self.pc);
                 self.value1 = 0;
-                //self.increment_pc(); // in the case of single byte instruction, the following byte is read and discarded
+
                 match self.opcode.addressing_mode {
                     AddressingMode::Accumulator | AddressingMode::Implied => {}
                     _ => self.increment_pc(),
                 }
-                match self.opcode.addressing_mode {
-                    AddressingMode::Accumulator => {
-                        if let Instruction::ReadWrite(instruction) = self.opcode.instruction {
-                            CpuState::Accumulator(instruction)
-                        } else {
-                            unreachable!("only read write instructions support the accumulator addressing mode")
-                        }
+
+                match (self.opcode.addressing_mode, self.opcode.instruction) {
+                    (AddressingMode::Accumulator, Instruction::ReadWrite(instruction)) => {
+                        CpuState::Accumulator(instruction)
                     }
-                    AddressingMode::IndirectX => CpuState::IndirectX0,
-                    AddressingMode::ZeroPage => CpuState::ReadOrWrite,
-                    AddressingMode::Immediate => {
-                        if let Instruction::Read(instruction) = self.opcode.instruction {
-                            CpuState::ReadInstruction(instruction)
-                        } else {
-                            unreachable!(
-                                "only read instructions support the immediate addressing mode"
-                            )
-                        }
+                    (AddressingMode::IndirectX, _) => CpuState::IndirectX0,
+                    (AddressingMode::ZeroPage, _) => CpuState::ReadOrWrite,
+                    (AddressingMode::Immediate, Instruction::Read(instruction)) => {
+                        CpuState::ReadInstruction(instruction)
                     }
-                    AddressingMode::Absolute => CpuState::Absolute(None),
-                    AddressingMode::IndirectY => CpuState::IndirectY0,
-                    AddressingMode::ZeroPageX => CpuState::ZeroPageX,
-                    AddressingMode::ZeroPageY => unimplemented!(),
-                    AddressingMode::AbsoluteY => CpuState::Absolute(Some(self.y)),
-                    AddressingMode::AbsoluteX => CpuState::Absolute(Some(self.x)),
-                    AddressingMode::Implied => {
-                        if let Instruction::Implied(instruction) = self.opcode.instruction {
-                            CpuState::ImpliedInstruction(instruction)
-                        } else if let Instruction::Push(instruction) = self.opcode.instruction {
-                            CpuState::PushInstruction(instruction)
-                        } else if let Instruction::Pull(instruction) = self.opcode.instruction {
-                            CpuState::PullInstruction0(instruction)
-                        } else if let Instruction::Brk = self.opcode.instruction {
-                            CpuState::Brk0
-                        } else if let Instruction::Rti = self.opcode.instruction {
-                            CpuState::Rti0
-                        } else {
-                            unreachable!()
-                        }
+                    (AddressingMode::Absolute, _) => CpuState::Absolute(None),
+                    (AddressingMode::IndirectY, _) => CpuState::IndirectY0,
+                    (AddressingMode::ZeroPageX, _) => CpuState::ZeroPageX,
+                    (AddressingMode::ZeroPageY, _) => unimplemented!(),
+                    (AddressingMode::AbsoluteY, _) => CpuState::Absolute(Some(self.y)),
+                    (AddressingMode::AbsoluteX, _) => CpuState::Absolute(Some(self.x)),
+                    (AddressingMode::Implied, Instruction::Implied(instruction)) => {
+                        CpuState::ImpliedInstruction(instruction)
                     }
-                    AddressingMode::Indirect => unimplemented!(),
-                    AddressingMode::Relative => {
-                        if let Instruction::Branch(instruction) = self.opcode.instruction {
-                            CpuState::BranchInstruction0(instruction)
-                        } else {
-                            unreachable!(
-                                "only read instructions support the immediate addressing mode"
-                            )
-                        }
+                    (AddressingMode::Implied, Instruction::Push(instruction)) => {
+                        CpuState::PushInstruction(instruction)
                     }
+                    (AddressingMode::Implied, Instruction::Pull(instruction)) => {
+                        CpuState::PullInstruction0(instruction)
+                    }
+                    (AddressingMode::Implied, Instruction::Brk) => CpuState::Brk0,
+                    (AddressingMode::Implied, Instruction::Rti) => CpuState::Rti0,
+                    (AddressingMode::Implied, Instruction::Rts) => CpuState::Rts0,
+                    (AddressingMode::Relative, Instruction::Branch(instruction)) => {
+                        CpuState::BranchInstruction0(instruction)
+                    }
+                    (AddressingMode::Indirect, _) => unimplemented!(),
+                    (_, _) => unreachable!(),
                 }
             }
             CpuState::Absolute(index) => {
@@ -396,6 +383,23 @@ impl Cpu {
             }
             CpuState::Rti3 => {
                 self.pc |= (self.stack_pull() as u16) << 8;
+                CpuState::FetchOpCode
+            }
+            CpuState::Rts0 => {
+                self.increment_s();
+                CpuState::Rts1
+            }
+            CpuState::Rts1 => {
+                self.pc = self.stack_pull() as u16;
+                self.increment_s();
+                CpuState::Rts2
+            }
+            CpuState::Rts2 => {
+                self.pc |= (self.stack_pull() as u16) << 8;
+                CpuState::Rts3
+            }
+            CpuState::Rts3 => {
+                self.increment_pc();
                 CpuState::FetchOpCode
             }
         };
