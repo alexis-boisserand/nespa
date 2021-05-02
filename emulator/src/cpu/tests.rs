@@ -1448,6 +1448,38 @@ fn ror() {
     assert!(!cpu.p.contains(Flags::Z));
     assert!(!cpu.p.contains(Flags::C));
 }
+
+#[test]
+fn rti()
+{
+    let mut cpu = setup(&[
+        0x40 // RTI
+    ]);
+
+    cpu.stack_push(0x34); // put pch on stack
+    cpu.stack_push(0x20); // put pcl on stack
+    cpu.stack_push(0x42); // put p register on stack
+
+    cpu.write_mem_u16(0x3420, 0xaa29); // AND #aa
+    cpu.write_mem_u16(0x3422, 0x5529); // AND #55
+
+    cpu.a = 0xff;
+
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // do nothing
+    cpu.tick(); // increment s
+    cpu.tick(); // pull p from stack, increment s
+    cpu.tick(); // pull pcl from stack, increment s
+    cpu.tick(); // pull pcl from stack
+    assert_eq!(cpu.pc, 0x3420);
+    assert_eq!(cpu.p.bits(), 0x42);
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch operand
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.a, 0xaa);
+
+}
+
 #[test]
 fn sbc() {
     // test Z, N and C flags

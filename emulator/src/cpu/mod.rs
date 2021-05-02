@@ -20,9 +20,9 @@ const INTERRUPT_VECTOR: u16 = 0xFFFE;
 
 bitflags! {
     struct Flags: u8 {
-        const C = 0x1;
-        const Z = 0x2;
-        const I = 0x4;
+        const C = 0x01;
+        const Z = 0x02;
+        const I = 0x04;
         const D = 0x10;
         const B = 0x20;
         const V = 0x40;
@@ -58,6 +58,10 @@ enum CpuState {
     Brk2,
     Brk3,
     Brk4,
+    Rti0,
+    Rti1,
+    Rti2,
+    Rti3
 }
 
 #[derive(Debug)]
@@ -142,6 +146,8 @@ impl Cpu {
                             CpuState::PullInstruction0(instruction)
                         } else if let Instruction::Brk = self.opcode.instruction {
                             CpuState::Brk0
+                        } else if let Instruction::Rti = self.opcode.instruction {
+                            CpuState::Rti0
                         } else {
                             unreachable!()
                         }
@@ -281,7 +287,7 @@ impl Cpu {
                     opcodes::BranchInstruction::Bvs => self.bvs(),
                 };
                 if condition_fulfilled {
-                    let pcl = (self.pc & 0xFF) as u8;
+                    let pcl = self.pc as u8;
                     let offset = self.value0 as i8;
                     let offset_positive = offset.is_positive();
                     let (value, pagebound_crossed) = if offset_positive {
@@ -344,7 +350,7 @@ impl Cpu {
                 CpuState::FetchOpCode
             }
             CpuState::PullInstruction0(instruction) => {
-                self.s = self.s.wrapping_add(1);
+                self.increment_s();
                 CpuState::PullInstruction1(instruction)
             }
             CpuState::PullInstruction1(instruction) => {
@@ -372,6 +378,24 @@ impl Cpu {
             }
             CpuState::Brk4 => {
                 self.pc |= (self.read_mem(INTERRUPT_VECTOR + 1) as u16) << 8;
+                CpuState::FetchOpCode
+            }
+            CpuState::Rti0 => {
+                self.increment_s();
+                CpuState::Rti1
+            }
+            CpuState::Rti1 => {
+                self.p = Flags::from_bits_truncate(self.stack_pull());
+                self.increment_s();
+                CpuState::Rti2
+            }
+            CpuState::Rti2 => {
+                self.pc = self.stack_pull() as u16;
+                self.increment_s();
+                CpuState::Rti3
+            }
+            CpuState::Rti3 => {
+                self.pc |= (self.stack_pull() as u16) << 8;
                 CpuState::FetchOpCode
             }
         };
@@ -440,6 +464,10 @@ impl Cpu {
     fn increment_pc(&mut self) {
         // FIXME: not sure about this
         self.pc = self.pc.wrapping_add(1);
+    }
+
+    fn increment_s(&mut self) {
+        self.s = self.s.wrapping_add(1);
     }
 
     fn set_zero_and_negative_flags(&mut self, value: u8) {

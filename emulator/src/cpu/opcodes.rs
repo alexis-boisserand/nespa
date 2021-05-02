@@ -52,7 +52,7 @@ impl From<u8> for OpCode {
             0x39 => (Read(And), AbsoluteY),
             0x3d => (Read(And), AbsoluteX),
             0x3e => (ReadWrite(Rol), AbsoluteX),
-            0x40 => (RTI, AddressingMode::Implied),
+            0x40 => (Rti, AddressingMode::Implied),
             0x41 => (Read(Eor), IndirectX),
             0x45 => (Read(Eor), ZeroPage),
             0x46 => (ReadWrite(Lsr), ZeroPage),
@@ -186,9 +186,9 @@ pub enum Instruction {
     Push(PushInstruction),
     Pull(PullInstruction),
     Brk,
+    Rti,
     JMP,
     JSR,
-    RTI,
     RTS,
 }
 
