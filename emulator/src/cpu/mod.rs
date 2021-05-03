@@ -259,18 +259,18 @@ impl Cpu {
             }
             CpuState::ReadInstruction(instruction) => {
                 match instruction {
-                    opcodes::ReadInstruction::Adc => self.adc(),
-                    opcodes::ReadInstruction::And => self.and(),
-                    opcodes::ReadInstruction::Bit => self.bit(),
-                    opcodes::ReadInstruction::Cmp => self.cmp(),
-                    opcodes::ReadInstruction::Eor => self.eor(),
-                    opcodes::ReadInstruction::Lda => self.lda(),
-                    opcodes::ReadInstruction::Ldx => self.ldx(),
-                    opcodes::ReadInstruction::Ldy => self.ldy(),
-                    opcodes::ReadInstruction::Ora => self.ora(),
-                    opcodes::ReadInstruction::Sbc => self.sbc(),
-                    opcodes::ReadInstruction::Cpx => self.cpx(),
-                    opcodes::ReadInstruction::Cpy => self.cpy(),
+                    opcodes::ReadInstruction::Adc => self.adc(self.value0),
+                    opcodes::ReadInstruction::And => self.and(self.value0),
+                    opcodes::ReadInstruction::Bit => self.bit(self.value0),
+                    opcodes::ReadInstruction::Cmp => self.cmp(self.value0),
+                    opcodes::ReadInstruction::Eor => self.eor(self.value0),
+                    opcodes::ReadInstruction::Lda => self.lda(self.value0),
+                    opcodes::ReadInstruction::Ldx => self.ldx(self.value0),
+                    opcodes::ReadInstruction::Ldy => self.ldy(self.value0),
+                    opcodes::ReadInstruction::Ora => self.ora(self.value0),
+                    opcodes::ReadInstruction::Sbc => self.sbc(self.value0),
+                    opcodes::ReadInstruction::Cpx => self.cpx(self.value0),
+                    opcodes::ReadInstruction::Cpy => self.cpy(self.value0),
                 };
                 self.fetch_opcode();
                 self.increment_pc();
@@ -536,9 +536,9 @@ impl Cpu {
         }
     }
 
-    fn adc(&mut self) {
+    fn adc(&mut self, value: u8) {
         let a = self.a as u16;
-        let m = self.value0 as u16 + self.p.contains(Flags::C) as u16;
+        let m = value as u16 + self.p.contains(Flags::C) as u16;
         let value = a + m;
         self.p
             .set(Flags::V, (a ^ value) & (m ^ value) & 0x0080 != 0);
@@ -546,8 +546,8 @@ impl Cpu {
         set_reg!(self, a, value as u8);
     }
 
-    fn and(&mut self) {
-        set_reg!(self, a, self.a & self.value0);
+    fn and(&mut self, value: u8) {
+        set_reg!(self, a, self.a & value);
     }
 
     fn asl(&mut self, mut value: u8) -> u8 {
@@ -570,8 +570,8 @@ impl Cpu {
         self.p.contains(Flags::Z)
     }
 
-    fn bit(&mut self) {
-        let value = self.a & self.value0;
+    fn bit(&mut self, value: u8) {
+        let value = self.a & value;
         self.set_zero_and_negative_flags(value);
     }
 
@@ -611,20 +611,20 @@ impl Cpu {
         self.p.set(Flags::V, false);
     }
 
-    fn cmp(&mut self) {
-        let (value, overflow) = self.a.overflowing_sub(self.value0);
+    fn cmp(&mut self, value: u8) {
+        let (value, overflow) = self.a.overflowing_sub(value);
         self.set_zero_and_negative_flags(value);
         self.p.set(Flags::C, !overflow);
     }
 
-    fn cpx(&mut self) {
-        let (value, overflow) = self.x.overflowing_sub(self.value0);
+    fn cpx(&mut self, value: u8) {
+        let (value, overflow) = self.x.overflowing_sub(value);
         self.set_zero_and_negative_flags(value);
         self.p.set(Flags::C, !overflow);
     }
 
-    fn cpy(&mut self) {
-        let (value, overflow) = self.y.overflowing_sub(self.value0);
+    fn cpy(&mut self, value: u8) {
+        let (value, overflow) = self.y.overflowing_sub(value);
         self.set_zero_and_negative_flags(value);
         self.p.set(Flags::C, !overflow);
     }
@@ -643,8 +643,8 @@ impl Cpu {
         self.y = self.dec(self.y);
     }
 
-    fn eor(&mut self) {
-        set_reg!(self, a, self.a ^ self.value0);
+    fn eor(&mut self, value: u8) {
+        set_reg!(self, a, self.a ^ value);
     }
 
     fn inc(&mut self, value: u8) -> u8 {
@@ -661,16 +661,16 @@ impl Cpu {
         self.y = self.inc(self.y);
     }
 
-    fn lda(&mut self) {
-        set_reg!(self, a, self.value0);
+    fn lda(&mut self, value: u8) {
+        set_reg!(self, a, value);
     }
 
-    fn ldx(&mut self) {
-        set_reg!(self, x, self.value0);
+    fn ldx(&mut self, value: u8) {
+        set_reg!(self, x, value);
     }
 
-    fn ldy(&mut self) {
-        set_reg!(self, y, self.value0);
+    fn ldy(&mut self, value: u8) {
+        set_reg!(self, y, value);
     }
 
     fn lsr(&mut self, mut value: u8) -> u8 {
@@ -681,8 +681,8 @@ impl Cpu {
         value
     }
 
-    fn ora(&mut self) {
-        set_reg!(self, a, self.a | self.value0);
+    fn ora(&mut self, value: u8) {
+        set_reg!(self, a, self.a | value);
     }
 
     fn pha(&mut self) {
@@ -720,9 +720,9 @@ impl Cpu {
         value
     }
 
-    fn sbc(&mut self) {
+    fn sbc(&mut self, value: u8) {
         let a = self.a as u16;
-        let m = self.value0 as u16 + 1 - (self.p.contains(Flags::C) as u16);
+        let m = value as u16 + 1 - (self.p.contains(Flags::C) as u16);
         let value = a.wrapping_sub(m);
         // overflow if result > 127 or < -128
         // positive - negative -> positive overflow
