@@ -1141,6 +1141,49 @@ fn eor() {
 }
 
 #[test]
+fn jmp() {
+    let mut cpu = setup(&[
+        0x4C, 0x16, 0x42, // JMP $4216
+    ]);
+
+    cpu.write_mem_u16(0x4216, 0x5529); // AND #55
+    cpu.write_mem_u16(0x4218, 0xaa29); // AND #aa
+
+    cpu.a = 0xff;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch adl
+    cpu.tick(); // fetch adh
+    cpu.tick(); // fetch AND's opcode
+    cpu.tick(); // fetch operand
+    assert_eq!(cpu.a, 0xff);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.a, 0x55);
+}
+
+#[test]
+fn jmp_indirect() {
+    let mut cpu = setup(&[
+        0x6C, 0x16, 0x32, // JMP ($3216)
+    ]);
+
+    cpu.write_mem_u16(0x3216, 0x1256); // write address $1256 to $3216
+    cpu.write_mem_u16(0x1256, 0x5529); // AND #55
+    cpu.write_mem_u16(0x1258, 0xaa29); // AND #aa
+
+    cpu.a = 0xff;
+    cpu.tick(); // fetch opcode
+    cpu.tick(); // fetch adl
+    cpu.tick(); // fetch adh
+    cpu.tick(); // fetch *adl
+    cpu.tick(); // fetch *adh
+    cpu.tick(); // fetch AND's opcode
+    cpu.tick(); // fetch operand
+    assert_eq!(cpu.a, 0xff);
+    cpu.tick(); // execute instruction and fetch next opcode
+    assert_eq!(cpu.a, 0x55);
+}
+
+#[test]
 fn jsr() {
     let mut cpu = setup(&[
         0x20, 0x32, 0x16, // JSR $1632
@@ -1692,16 +1735,17 @@ fn stx() {
 }
 
 #[test]
-fn sty() {
+fn stx_zeropage_y() {
     let mut cpu = setup(&[
-        0x84, 0x16, // STY $16
+        0x96, 0x16, // STX $16
     ]);
-    cpu.y = 0x78;
+    cpu.x = 0x78;
+    cpu.y = 0x02;
     cpu.tick(); // fetch opcode
     cpu.tick(); // fetch address
     cpu.tick(); // write register to address
     cpu.tick(); // fetch the next opcode
-    assert_eq!(cpu.read_mem(0x0016), 0x78);
+    assert_eq!(cpu.read_mem(0x0018), 0x78);
 }
 
 #[test]

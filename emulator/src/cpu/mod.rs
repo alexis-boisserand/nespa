@@ -189,7 +189,7 @@ impl Cpu {
                 CpuState::JmpIndirect1(address) // 6502 bug: page cross is not handled for this instruction
             }
             CpuState::JmpIndirect1(address) => {
-                self.pc |= self.read_mem(address.wrapping_add(1)) as u16 >> 8;
+                self.pc |= (self.read_mem(address.wrapping_add(1)) as u16) << 8;
                 CpuState::FetchOpCode
             }
             CpuState::Accumulator(instruction) => {
