@@ -2,7 +2,7 @@ mod opcodes;
 #[cfg(test)]
 mod tests;
 
-use self::opcodes::{AddressingMode, Instruction, OpCode};
+use self::opcodes::*;
 use bitflags::bitflags;
 
 macro_rules! set_reg {
@@ -33,25 +33,25 @@ bitflags! {
 #[derive(Debug)]
 enum CpuState {
     FetchOpCode,
-    FetchValue,
-    Absolute(Option<u8>),
-    Accumulator(opcodes::ReadWriteInstruction),
-    ReadOrWrite,
-    ZeroPageIndexed(u8),
-    PageCrossing,
-    IndirectX0,
-    IndirectX1,
-    IndirectX2,
-    IndirectY0,
-    IndirectY1,
-    ReadInstruction(opcodes::ReadInstruction, u8),
-    ReadWriteInstruction(opcodes::ReadWriteInstruction, u16, u8),
+    FetchValue(OpCode),
+    Absolute(Instruction, u8, Option<u8>),
+    Accumulator(ReadWriteInstruction),
+    ReadOrWrite(Instruction, u16),
+    ZeroPageIndexed(Instruction, u8, u8),
+    PageCrossing(Instruction, u16),
+    IndirectX0(Instruction, u8),
+    IndirectX1(Instruction, u8),
+    IndirectX2(Instruction, u8, u8),
+    IndirectY0(Instruction, u8),
+    IndirectY1(Instruction, u8, u8),
+    ReadInstruction(ReadInstruction, u8),
+    ReadWriteInstruction(ReadWriteInstruction, u16, u8),
     WriteBack(u16, u8),
-    BranchInstruction0(opcodes::BranchInstruction),
-    ImpliedInstruction(opcodes::ImpliedInstruction),
-    PushInstruction(opcodes::PushInstruction),
-    PullInstruction0(opcodes::PullInstruction),
-    PullInstruction1(opcodes::PullInstruction),
+    BranchInstruction0(BranchInstruction, u8),
+    ImpliedInstruction(ImpliedInstruction),
+    PushInstruction(PushInstruction),
+    PullInstruction0(PullInstruction),
+    PullInstruction1(PullInstruction),
     BranchInstruction1(bool),
     Brk0,
     Brk1,
@@ -66,11 +66,11 @@ enum CpuState {
     Rts1,
     Rts2,
     Rts3,
-    Jsr0,
-    Jsr1,
-    Jsr2,
-    Jsr3,
-    JmpIndirect0,
+    Jsr0(u8),
+    Jsr1(u8),
+    Jsr2(u8),
+    Jsr3(u8),
+    JmpIndirect0(u16),
     JmpIndirect1(u16),
 }
 
@@ -84,9 +84,6 @@ pub struct Cpu {
     p: Flags,
     mem: [u8; 0x10000],
     state: CpuState,
-    opcode: OpCode,
-    value0: u8,
-    value1: u8,
 }
 
 impl Cpu {
@@ -100,47 +97,54 @@ impl Cpu {
             p: Flags::from_bits_truncate(P_INIT_VALUE),
             mem: [0; 0x10000],
             state: CpuState::FetchOpCode,
-            // actual initial values don't matter the next 3 fields
-            opcode: OpCode::from(0x69),
-            value0: 0,
-            value1: 0,
         }
     }
 
     pub fn tick(&mut self) {
         self.state = match self.state {
-            CpuState::FetchOpCode => {
-                self.fetch_opcode();
-                self.increment_pc();
-                CpuState::FetchValue
-            }
-            CpuState::FetchValue => {
-                self.value0 = self.read_mem(self.pc);
-                self.value1 = 0;
+            CpuState::FetchOpCode => self.fetch_opcode(),
+            CpuState::FetchValue(opcode) => {
+                let value = self.read_mem(self.pc);
 
-                match (self.opcode.addressing_mode, self.opcode.instruction) {
+                match (opcode.addressing_mode, opcode.instruction) {
                     (AddressingMode::Accumulator, _) | (AddressingMode::Implied, _) => {}
                     _ => self.increment_pc(),
                 }
 
-                match (self.opcode.addressing_mode, self.opcode.instruction) {
+                match (opcode.addressing_mode, opcode.instruction) {
                     (AddressingMode::Accumulator, Instruction::ReadWrite(instruction)) => {
                         CpuState::Accumulator(instruction)
                     }
                     (AddressingMode::Accumulator, _) => unreachable!(),
-                    (AddressingMode::IndirectX, _) => CpuState::IndirectX0,
-                    (AddressingMode::ZeroPage, _) => CpuState::ReadOrWrite,
+                    (AddressingMode::IndirectX, _) => {
+                        CpuState::IndirectX0(opcode.instruction, value)
+                    }
+                    (AddressingMode::ZeroPage, _) => {
+                        CpuState::ReadOrWrite(opcode.instruction, value as u16)
+                    }
                     (AddressingMode::Immediate, Instruction::Read(instruction)) => {
-                        CpuState::ReadInstruction(instruction, self.value0)
+                        CpuState::ReadInstruction(instruction, value)
                     }
                     (AddressingMode::Immediate, _) => unreachable!(),
-                    (AddressingMode::Absolute, Instruction::Jsr) => CpuState::Jsr0,
-                    (AddressingMode::Absolute, _) => CpuState::Absolute(None),
-                    (AddressingMode::IndirectY, _) => CpuState::IndirectY0,
-                    (AddressingMode::ZeroPageX, _) => CpuState::ZeroPageIndexed(self.x),
-                    (AddressingMode::ZeroPageY, _) => CpuState::ZeroPageIndexed(self.y),
-                    (AddressingMode::AbsoluteY, _) => CpuState::Absolute(Some(self.y)),
-                    (AddressingMode::AbsoluteX, _) => CpuState::Absolute(Some(self.x)),
+                    (AddressingMode::Absolute, Instruction::Jsr) => CpuState::Jsr0(value),
+                    (AddressingMode::Absolute, _) => {
+                        CpuState::Absolute(opcode.instruction, value, None)
+                    }
+                    (AddressingMode::IndirectY, _) => {
+                        CpuState::IndirectY0(opcode.instruction, value)
+                    }
+                    (AddressingMode::ZeroPageX, _) => {
+                        CpuState::ZeroPageIndexed(opcode.instruction, value, self.x)
+                    }
+                    (AddressingMode::ZeroPageY, _) => {
+                        CpuState::ZeroPageIndexed(opcode.instruction, value, self.y)
+                    }
+                    (AddressingMode::AbsoluteY, _) => {
+                        CpuState::Absolute(opcode.instruction, value, Some(self.y))
+                    }
+                    (AddressingMode::AbsoluteX, _) => {
+                        CpuState::Absolute(opcode.instruction, value, Some(self.x))
+                    }
                     (AddressingMode::Implied, Instruction::Implied(instruction)) => {
                         CpuState::ImpliedInstruction(instruction)
                     }
@@ -155,36 +159,37 @@ impl Cpu {
                     (AddressingMode::Implied, Instruction::Rts) => CpuState::Rts0,
                     (AddressingMode::Implied, _) => unreachable!(),
                     (AddressingMode::Relative, Instruction::Branch(instruction)) => {
-                        CpuState::BranchInstruction0(instruction)
+                        CpuState::BranchInstruction0(instruction, value)
                     }
                     (AddressingMode::Relative, _) => unreachable!(),
                 }
             }
-            CpuState::Absolute(index) => {
-                self.value1 = self.read_mem(self.pc);
+            CpuState::Absolute(instruction, address_l, index) => {
+                let address_h = self.read_mem(self.pc);
                 self.increment_pc();
                 match index {
                     Some(register) => {
-                        let (value, pagebound_crossed) = self.value0.overflowing_add(register);
-                        self.value0 = value;
+                        let (address_l, pagebound_crossed) = address_l.overflowing_add(register);
+                        let address = address(address_h, address_l);
                         if pagebound_crossed {
-                            CpuState::PageCrossing
+                            CpuState::PageCrossing(instruction, address)
                         } else {
-                            CpuState::ReadOrWrite
+                            CpuState::ReadOrWrite(instruction, address)
                         }
                     }
-                    None => match self.opcode.instruction {
+                    None => match instruction {
                         Instruction::Jmp => {
-                            self.pc = (self.value1 as u16) << 8 | self.value0 as u16;
+                            self.pc = address(address_h, address_l);
                             CpuState::FetchOpCode
                         }
-                        Instruction::JmpIndirect => CpuState::JmpIndirect0,
-                        _ => CpuState::ReadOrWrite,
+                        Instruction::JmpIndirect => {
+                            CpuState::JmpIndirect0(address(address_h, address_l))
+                        }
+                        _ => CpuState::ReadOrWrite(instruction, address(address_h, address_l)),
                     },
                 }
             }
-            CpuState::JmpIndirect0 => {
-                let address = (self.value1 as u16) << 8 | self.value0 as u16;
+            CpuState::JmpIndirect0(address) => {
                 self.pc = self.read_mem(address) as u16;
                 CpuState::JmpIndirect1(address) // 6502 bug: page cross is not handled for this instruction
             }
@@ -194,90 +199,71 @@ impl Cpu {
             }
             CpuState::Accumulator(instruction) => {
                 self.a = self.execute_read_write_instruction(instruction, self.a);
-                self.fetch_opcode();
-                self.increment_pc();
-                CpuState::FetchValue
+                self.fetch_opcode()
             }
-            CpuState::ReadOrWrite => {
-                let address = (self.value1 as u16) << 8 | self.value0 as u16;
-                match self.opcode.instruction {
-                    Instruction::Read(instruction) => {
-                        let value = self.read_mem(address);
-                        CpuState::ReadInstruction(instruction, value)
-                    }
-                    Instruction::ReadWrite(instruction) => {
-                        let value = self.read_mem(address);
-                        CpuState::ReadWriteInstruction(instruction, address, value)
-                    }
-                    Instruction::Write(instruction) => {
-                        let value = match instruction {
-                            opcodes::WriteInstruction::Sta => self.a,
-                            opcodes::WriteInstruction::Stx => self.x,
-                            opcodes::WriteInstruction::Sty => self.y,
-                        };
-                        self.write_mem(address, value);
-                        CpuState::FetchOpCode
-                    }
-                    _ => unimplemented!(),
+            CpuState::ReadOrWrite(instruction, address) => match instruction {
+                Instruction::Read(instruction) => {
+                    let value = self.read_mem(address);
+                    CpuState::ReadInstruction(instruction, value)
                 }
+                Instruction::ReadWrite(instruction) => {
+                    let value = self.read_mem(address);
+                    CpuState::ReadWriteInstruction(instruction, address, value)
+                }
+                Instruction::Write(instruction) => {
+                    let value = match instruction {
+                        opcodes::WriteInstruction::Sta => self.a,
+                        opcodes::WriteInstruction::Stx => self.x,
+                        opcodes::WriteInstruction::Sty => self.y,
+                    };
+                    self.write_mem(address, value);
+                    CpuState::FetchOpCode
+                }
+                _ => unimplemented!(),
+            },
+            CpuState::ZeroPageIndexed(instruction, address, register) => {
+                let address = address.wrapping_add(register);
+                CpuState::ReadOrWrite(instruction, address as u16)
             }
-            CpuState::ZeroPageIndexed(register) => {
-                self.value0 = self.value0.wrapping_add(register);
-                CpuState::ReadOrWrite
+            CpuState::PageCrossing(instruction, address) => {
+                let address_h = (address >> 8) as u8;
+                let address = (address_h.wrapping_add(1) as u16) << 8 | (address & 0x00FF);
+                CpuState::ReadOrWrite(instruction, address)
             }
-            CpuState::PageCrossing => {
-                self.value1 = self.value1.wrapping_add(1);
-                CpuState::ReadOrWrite
+            CpuState::IndirectX0(instruction, pointer) => {
+                let pointer = pointer.wrapping_add(self.x);
+                CpuState::IndirectX1(instruction, pointer)
             }
-            CpuState::IndirectX0 => {
-                self.value0 = self.value0.wrapping_add(self.x);
-                CpuState::IndirectX1
+            CpuState::IndirectX1(instruction, pointer) => {
+                let address_l = self.read_mem(pointer as u16);
+                let pointer = pointer.wrapping_add(1);
+                CpuState::IndirectX2(instruction, pointer, address_l)
             }
-            CpuState::IndirectX1 => {
-                self.value1 = self.value0.wrapping_add(1);
-                self.value0 = self.read_mem(self.value0 as u16);
-                CpuState::IndirectX2
+            CpuState::IndirectX2(instruction, pointer, address_l) => {
+                let address_h = self.read_mem(pointer as u16);
+                CpuState::ReadOrWrite(instruction, address(address_h, address_l))
             }
-            CpuState::IndirectX2 => {
-                self.value1 = self.read_mem(self.value1 as u16);
-                CpuState::ReadOrWrite
+            CpuState::IndirectY0(instruction, pointer) => {
+                let address_l = self.read_mem(pointer as u16);
+                let pointer = pointer.wrapping_add(1);
+                CpuState::IndirectY1(instruction, pointer, address_l)
             }
-            CpuState::IndirectY0 => {
-                self.value1 = self.value0.wrapping_add(1);
-                self.value0 = self.read_mem(self.value0 as u16);
-                CpuState::IndirectY1
-            }
-            CpuState::IndirectY1 => {
-                self.value1 = self.read_mem(self.value1 as u16);
-                let (value, pagebound_crossed) = self.value0.overflowing_add(self.y);
-                self.value0 = value;
+            CpuState::IndirectY1(instruction, pointer, address_l) => {
+                let address_h = self.read_mem(pointer as u16);
+                let (address_l, pagebound_crossed) = address_l.overflowing_add(self.y);
+                let address = address(address_h, address_l);
                 if pagebound_crossed {
-                    CpuState::PageCrossing
+                    CpuState::PageCrossing(instruction, address)
                 } else {
-                    CpuState::ReadOrWrite
+                    CpuState::ReadOrWrite(instruction, address)
                 }
             }
             CpuState::ReadInstruction(instruction, value) => {
-                match instruction {
-                    opcodes::ReadInstruction::Adc => self.adc(value),
-                    opcodes::ReadInstruction::And => self.and(value),
-                    opcodes::ReadInstruction::Bit => self.bit(value),
-                    opcodes::ReadInstruction::Cmp => self.cmp(value),
-                    opcodes::ReadInstruction::Eor => self.eor(value),
-                    opcodes::ReadInstruction::Lda => self.lda(value),
-                    opcodes::ReadInstruction::Ldx => self.ldx(value),
-                    opcodes::ReadInstruction::Ldy => self.ldy(value),
-                    opcodes::ReadInstruction::Ora => self.ora(value),
-                    opcodes::ReadInstruction::Sbc => self.sbc(value),
-                    opcodes::ReadInstruction::Cpx => self.cpx(value),
-                    opcodes::ReadInstruction::Cpy => self.cpy(value),
-                };
-                self.fetch_opcode();
-                self.increment_pc();
-                CpuState::FetchValue
+                self.execute_read_instruction(instruction, value);
+                self.fetch_opcode()
             }
             CpuState::ReadWriteInstruction(instruction, address, value) => {
-                // in theory, at this point, self.value0 is written to address
+                // in theory, at this point, a value is written to address
                 // right before executing the instruction
                 let value = self.execute_read_write_instruction(instruction, value);
                 CpuState::WriteBack(address, value)
@@ -286,8 +272,7 @@ impl Cpu {
                 self.write_mem(address, value);
                 CpuState::FetchOpCode
             }
-            CpuState::BranchInstruction0(instruction) => {
-                self.fetch_opcode();
+            CpuState::BranchInstruction0(instruction, value) => {
                 let condition_fulfilled: bool = match instruction {
                     opcodes::BranchInstruction::Bcc => self.bcc(),
                     opcodes::BranchInstruction::Bcs => self.bcs(),
@@ -299,34 +284,32 @@ impl Cpu {
                     opcodes::BranchInstruction::Bvs => self.bvs(),
                 };
                 if condition_fulfilled {
-                    let pcl = self.pc as u8;
-                    let offset = self.value0 as i8;
+                    let pc_l = self.pc as u8;
+                    let offset = value as i8;
                     let offset_positive = offset.is_positive();
-                    let (value, pagebound_crossed) = if offset_positive {
-                        pcl.overflowing_add(self.value0)
+                    let (pc_l, pagebound_crossed) = if offset_positive {
+                        pc_l.overflowing_add(value)
                     } else {
-                        pcl.overflowing_sub(offset.unsigned_abs())
+                        pc_l.overflowing_sub(offset.unsigned_abs())
                     };
-                    self.pc = (self.pc & 0xFF00) | value as u16;
+                    self.pc = (self.pc & 0xFF00) | pc_l as u16;
                     if pagebound_crossed {
                         CpuState::BranchInstruction1(offset_positive)
                     } else {
                         CpuState::FetchOpCode
                     }
                 } else {
-                    self.increment_pc();
-                    CpuState::FetchValue
+                    self.fetch_opcode()
                 }
             }
             CpuState::BranchInstruction1(positive) => {
-                self.fetch_opcode();
-                let mut pch = (self.pc >> 8) as u8;
-                pch = if positive {
-                    pch.wrapping_add(1)
+                let mut pc_h = (self.pc >> 8) as u8;
+                pc_h = if positive {
+                    pc_h.wrapping_add(1)
                 } else {
-                    pch.wrapping_sub(1)
+                    pc_h.wrapping_sub(1)
                 };
-                self.pc = (pch as u16) << 8 | (self.pc & 0xFF);
+                self.pc = (pc_h as u16) << 8 | (self.pc & 0xFF);
                 CpuState::FetchOpCode
             }
             CpuState::ImpliedInstruction(instruction) => {
@@ -350,9 +333,7 @@ impl Cpu {
                     opcodes::ImpliedInstruction::Txs => self.txs(),
                     opcodes::ImpliedInstruction::Tya => self.tya(),
                 }
-                self.fetch_opcode();
-                self.increment_pc();
-                CpuState::FetchValue
+                self.fetch_opcode()
             }
             CpuState::PushInstruction(instruction) => {
                 match instruction {
@@ -427,21 +408,21 @@ impl Cpu {
                 self.increment_pc();
                 CpuState::FetchOpCode
             }
-            CpuState::Jsr0 => {
+            CpuState::Jsr0(address_l) => {
                 // some internal operation
-                CpuState::Jsr1
+                CpuState::Jsr1(address_l)
             }
-            CpuState::Jsr1 => {
+            CpuState::Jsr1(address_l) => {
                 self.stack_push((self.pc >> 8) as u8);
-                CpuState::Jsr2
+                CpuState::Jsr2(address_l)
             }
-            CpuState::Jsr2 => {
+            CpuState::Jsr2(address_l) => {
                 self.stack_push(self.pc as u8);
-                CpuState::Jsr3
+                CpuState::Jsr3(address_l)
             }
-            CpuState::Jsr3 => {
-                let value = self.read_mem(self.pc) as u16;
-                self.pc = value << 8 | self.value0 as u16;
+            CpuState::Jsr3(address_l) => {
+                let address_h = self.read_mem(self.pc);
+                self.pc = address(address_h, address_l);
                 CpuState::FetchOpCode
             }
         };
@@ -503,8 +484,10 @@ impl Cpu {
         self.s = self.s.wrapping_sub(1);
     }
 
-    fn fetch_opcode(&mut self) {
-        self.opcode = OpCode::from(self.read_mem(self.pc));
+    fn fetch_opcode(&mut self) -> CpuState {
+        let opcode = OpCode::from(self.read_mem(self.pc));
+        self.increment_pc();
+        CpuState::FetchValue(opcode)
     }
 
     fn increment_pc(&mut self) {
@@ -521,18 +504,37 @@ impl Cpu {
         self.p.set(Flags::N, value & 0x80 != 0);
     }
 
+    fn execute_read_instruction(&mut self, instruction: ReadInstruction, value: u8) {
+        use ReadInstruction::*;
+        match instruction {
+            Adc => self.adc(value),
+            And => self.and(value),
+            Bit => self.bit(value),
+            Cmp => self.cmp(value),
+            Eor => self.eor(value),
+            Lda => self.lda(value),
+            Ldx => self.ldx(value),
+            Ldy => self.ldy(value),
+            Ora => self.ora(value),
+            Sbc => self.sbc(value),
+            Cpx => self.cpx(value),
+            Cpy => self.cpy(value),
+        };
+    }
+
     fn execute_read_write_instruction(
         &mut self,
-        instruction: opcodes::ReadWriteInstruction,
+        instruction: ReadWriteInstruction,
         value: u8,
     ) -> u8 {
+        use ReadWriteInstruction::*;
         match instruction {
-            opcodes::ReadWriteInstruction::Asl => self.asl(value),
-            opcodes::ReadWriteInstruction::Dec => self.dec(value),
-            opcodes::ReadWriteInstruction::Inc => self.inc(value),
-            opcodes::ReadWriteInstruction::Lsr => self.lsr(value),
-            opcodes::ReadWriteInstruction::Rol => self.rol(value),
-            opcodes::ReadWriteInstruction::Ror => self.ror(value),
+            ReadWriteInstruction::Asl => self.asl(value),
+            ReadWriteInstruction::Dec => self.dec(value),
+            ReadWriteInstruction::Inc => self.inc(value),
+            ReadWriteInstruction::Lsr => self.lsr(value),
+            ReadWriteInstruction::Rol => self.rol(value),
+            ReadWriteInstruction::Ror => self.ror(value),
         }
     }
 
@@ -777,4 +779,8 @@ impl Cpu {
     fn tya(&mut self) {
         set_reg!(self, a, self.y);
     }
+}
+
+fn address(address_h: u8, address_l: u8) -> u16 {
+    (address_h as u16) << 8 | address_l as u16
 }
