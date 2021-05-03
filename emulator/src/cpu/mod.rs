@@ -44,9 +44,9 @@ enum CpuState {
     IndirectX2,
     IndirectY0,
     IndirectY1,
-    ReadInstruction(opcodes::ReadInstruction),
-    ReadWriteInstruction(opcodes::ReadWriteInstruction, u16),
-    WriteBack(u16),
+    ReadInstruction(opcodes::ReadInstruction, u8),
+    ReadWriteInstruction(opcodes::ReadWriteInstruction, u16, u8),
+    WriteBack(u16, u8),
     BranchInstruction0(opcodes::BranchInstruction),
     ImpliedInstruction(opcodes::ImpliedInstruction),
     PushInstruction(opcodes::PushInstruction),
@@ -131,7 +131,7 @@ impl Cpu {
                     (AddressingMode::IndirectX, _) => CpuState::IndirectX0,
                     (AddressingMode::ZeroPage, _) => CpuState::ReadOrWrite,
                     (AddressingMode::Immediate, Instruction::Read(instruction)) => {
-                        CpuState::ReadInstruction(instruction)
+                        CpuState::ReadInstruction(instruction, self.value0)
                     }
                     (AddressingMode::Immediate, _) => unreachable!(),
                     (AddressingMode::Absolute, Instruction::Jsr) => CpuState::Jsr0,
@@ -202,12 +202,12 @@ impl Cpu {
                 let address = (self.value1 as u16) << 8 | self.value0 as u16;
                 match self.opcode.instruction {
                     Instruction::Read(instruction) => {
-                        self.value0 = self.read_mem(address);
-                        CpuState::ReadInstruction(instruction)
+                        let value = self.read_mem(address);
+                        CpuState::ReadInstruction(instruction, value)
                     }
                     Instruction::ReadWrite(instruction) => {
-                        self.value0 = self.read_mem(address);
-                        CpuState::ReadWriteInstruction(instruction, address)
+                        let value = self.read_mem(address);
+                        CpuState::ReadWriteInstruction(instruction, address, value)
                     }
                     Instruction::Write(instruction) => {
                         let value = match instruction {
@@ -257,33 +257,33 @@ impl Cpu {
                     CpuState::ReadOrWrite
                 }
             }
-            CpuState::ReadInstruction(instruction) => {
+            CpuState::ReadInstruction(instruction, value) => {
                 match instruction {
-                    opcodes::ReadInstruction::Adc => self.adc(self.value0),
-                    opcodes::ReadInstruction::And => self.and(self.value0),
-                    opcodes::ReadInstruction::Bit => self.bit(self.value0),
-                    opcodes::ReadInstruction::Cmp => self.cmp(self.value0),
-                    opcodes::ReadInstruction::Eor => self.eor(self.value0),
-                    opcodes::ReadInstruction::Lda => self.lda(self.value0),
-                    opcodes::ReadInstruction::Ldx => self.ldx(self.value0),
-                    opcodes::ReadInstruction::Ldy => self.ldy(self.value0),
-                    opcodes::ReadInstruction::Ora => self.ora(self.value0),
-                    opcodes::ReadInstruction::Sbc => self.sbc(self.value0),
-                    opcodes::ReadInstruction::Cpx => self.cpx(self.value0),
-                    opcodes::ReadInstruction::Cpy => self.cpy(self.value0),
+                    opcodes::ReadInstruction::Adc => self.adc(value),
+                    opcodes::ReadInstruction::And => self.and(value),
+                    opcodes::ReadInstruction::Bit => self.bit(value),
+                    opcodes::ReadInstruction::Cmp => self.cmp(value),
+                    opcodes::ReadInstruction::Eor => self.eor(value),
+                    opcodes::ReadInstruction::Lda => self.lda(value),
+                    opcodes::ReadInstruction::Ldx => self.ldx(value),
+                    opcodes::ReadInstruction::Ldy => self.ldy(value),
+                    opcodes::ReadInstruction::Ora => self.ora(value),
+                    opcodes::ReadInstruction::Sbc => self.sbc(value),
+                    opcodes::ReadInstruction::Cpx => self.cpx(value),
+                    opcodes::ReadInstruction::Cpy => self.cpy(value),
                 };
                 self.fetch_opcode();
                 self.increment_pc();
                 CpuState::FetchValue
             }
-            CpuState::ReadWriteInstruction(instruction, address) => {
+            CpuState::ReadWriteInstruction(instruction, address, value) => {
                 // in theory, at this point, self.value0 is written to address
                 // right before executing the instruction
-                self.value0 = self.execute_read_write_instruction(instruction, self.value0);
-                CpuState::WriteBack(address)
+                let value = self.execute_read_write_instruction(instruction, value);
+                CpuState::WriteBack(address, value)
             }
-            CpuState::WriteBack(address) => {
-                self.write_mem(address, self.value0);
+            CpuState::WriteBack(address, value) => {
+                self.write_mem(address, value);
                 CpuState::FetchOpCode
             }
             CpuState::BranchInstruction0(instruction) => {
