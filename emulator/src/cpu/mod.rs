@@ -166,10 +166,10 @@ impl Cpu {
             }
             CpuState::Absolute(instruction, address_l, index) => {
                 let address_h = self.read_mem(self.pc);
-                self.increment_pc();
 
                 match (index, instruction) {
                     (Some(register), instruction) => {
+                        self.increment_pc();
                         let (address_l, pagebound_crossed) = address_l.overflowing_add(register);
                         let address = address(address_h, address_l);
                         if pagebound_crossed {
@@ -183,9 +183,13 @@ impl Cpu {
                         CpuState::FetchOpCode
                     }
                     (None, Instruction::JmpIndirect) => {
+                        self.increment_pc();
                         CpuState::JmpIndirect0(address(address_h, address_l))
                     }
-                    (None, _) => CpuState::ReadOrWrite(instruction, address(address_h, address_l)),
+                    (None, _) => {
+                        self.increment_pc();
+                        CpuState::ReadOrWrite(instruction, address(address_h, address_l))
+                    }
                 }
             }
             CpuState::PageCrossing(instruction, address) => {
