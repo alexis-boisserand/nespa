@@ -2,5 +2,6 @@
 
 members = [
     "emulator",
-    "desktop"
+    "desktop",
+    "game-and-watch"
 ]
