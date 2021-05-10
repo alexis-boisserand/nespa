@@ -15,13 +15,16 @@
             "cwd": "${workspaceRoot}",
             "preLaunchTask": "Cargo Build (debug)",
             "runToMain": true,
-            "executable": "../target/thumbv7em-none-eabihf/debug/game-and-watch",
+            "executable": "target/thumbv7em-none-eabihf/debug/game-and-watch",
             "device": "STM32H7Ax/7Bx",
             "configFiles": [
                 "openocd.cfg",
             ],
             "svdFile": "${workspaceRoot}/STM32H7B3x.svd",
             "postLaunchCommands": [
+                "break DefaultHandler",
+                "break HardFault",
+                "break rust_begin_unwind",
                 "monitor arm semihosting enable",
             ],
         }

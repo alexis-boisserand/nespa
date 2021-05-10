@@ -1,16 +1,33 @@
 #![no_main]
 #![no_std]
 
-use panic_halt as _;
+mod logger;
 
+use cortex_m;
 use cortex_m_rt::entry;
-use cortex_m_semihosting::{debug, hprintln};
+use stm32h7xx_hal::{pac, prelude::*, hal::digital::v2::InputPin};
 
 #[entry]
 fn main() -> ! {
-    hprintln!("Hello, world!").unwrap();
+    logger::init();
+
+    //let cp = cortex_m::Peripherals::take().unwrap();
+    let dp = pac::Peripherals::take().unwrap();
+
+    let pwr = dp.PWR.constrain();
+    let pwrcfg = pwr.freeze();
+
+    let rcc = dp.RCC.constrain();
+    let ccdr = rcc.sys_ck(100.mhz()).freeze(pwrcfg, &dp.SYSCFG);
+
+    let gpiod = dp.GPIOD.split(ccdr.peripheral.GPIOD);
+
+    let button_a = gpiod.pd9.into_pull_up_input();
 
     loop {
-        hprintln!("Ouaich").unwrap();
+        let result = button_a.is_high().unwrap();
+        log::info!("{}", result);
+        cortex_m::asm::delay(10000000);
     }
+
 }

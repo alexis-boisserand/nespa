@@ -1,7 +1,0 @@
-[workspace]
-
-members = [
-    "emulator",
-    "desktop",
-    "game-and-watch"
-]
