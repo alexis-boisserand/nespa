@@ -106,6 +106,12 @@ impl Cpu {
         }
     }
 
+    pub fn load(&mut self, address: u16, rom: &[u8]) {
+        let address = address as usize;
+        self.mem[address..address + rom.len()].copy_from_slice(rom);
+        self.write_mem_u16(RESET_VECTOR, address as u16);
+    }
+
     pub fn tick(&mut self) {
         self.state = match self.state {
             CpuState::FetchOpCode => self.fetch_opcode(),
@@ -409,27 +415,26 @@ impl Cpu {
         self.state = CpuState::FetchOpCode;
     }
 
-    fn read_mem(&self, address: u16) -> u8 {
+    pub fn read_mem(&self, address: u16) -> u8 {
         self.mem[address as usize]
     }
 
     // FIXME: Can potentially panic, check address value.
-    fn read_mem_u16(&self, address: u16) -> u16 {
+    pub fn read_mem_u16(&self, address: u16) -> u16 {
         let mut value = [0u8; 2];
         let address = address as usize;
         value.copy_from_slice(&self.mem[address..address + 2]);
         u16::from_le_bytes(value)
     }
 
-    fn write_mem(&mut self, address: u16, value: u8) {
+    pub fn write_mem(&mut self, address: u16, value: u8) {
         self.mem[address as usize] = value;
     }
 
-    #[cfg(test)]
-    fn write_mem_u16(&mut self, address: u16, value: u16) {
+    pub fn write_mem_u16(&mut self, address: u16, value: u16) {
         let value = value.to_le_bytes();
         let address = address as usize;
-        &self.mem[address..address + 2]
+        self.mem[address..address + 2]
             .iter_mut()
             .zip(value.iter())
             .for_each(|(dest, src)| *dest = *src);

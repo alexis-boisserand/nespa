@@ -167,7 +167,7 @@ impl From<u8> for OpCode {
             0xf9 => (Read(Sbc), AbsoluteY),
             0xfd => (Read(Sbc), AbsoluteX),
             0xfe => (ReadWrite(Inc), AbsoluteX),
-            _ => unimplemented!(),
+            _ => unimplemented!("opcode 0x{:02x} not implemented", opcode),
         };
         OpCode {
             instruction,

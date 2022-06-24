@@ -1,0 +1,10 @@
+[package]
+name = "snake"
+version = "0.1.0"
+authors = ["Alexis Boisserand <alexis.boisserand@gmail.com>"]
+edition = "2021"
+
+[dependencies]
+sdl2 = "0.35.2"
+rand = "0.8.5"
+nespa = { version = "0.1.0", path = "../nespa" }

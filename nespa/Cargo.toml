@@ -1,0 +1,8 @@
+[package]
+name = "nespa"
+version = "0.1.0"
+authors = ["Alexis Boisserand <alexis.boisserand@gmail.com>"]
+edition = "2021"
+
+[dependencies]
+bitflags = "1.2.1"
