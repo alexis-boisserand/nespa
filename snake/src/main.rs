@@ -54,7 +54,7 @@ fn color(byte: u8) -> Color {
 fn read_screen_state(cpu: &Cpu, frame: &mut [u8; 32 * 3 * 32]) -> bool {
     let mut frame_idx = 0;
     let mut update = false;
-    for i in 0x0200..0x600 {
+    for i in 0x0200..0x0600 {
         let color_idx = cpu.read_mem(i as u16);
         let (b1, b2, b3) = color(color_idx).rgb();
         if frame[frame_idx] != b1 || frame[frame_idx + 1] != b2 || frame[frame_idx + 2] != b3 {
