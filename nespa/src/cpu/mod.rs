@@ -2,6 +2,8 @@ mod opcodes;
 #[cfg(test)]
 mod tests;
 
+use crate::memory::Memory;
+
 use self::opcodes::*;
 use bitflags::bitflags;
 
@@ -75,25 +77,19 @@ enum CpuState {
 }
 
 #[derive(Debug)]
-pub struct Cpu {
+pub struct Cpu<Mem> {
     a: u8,
     x: u8,
     y: u8,
     pc: u16,
     s: u8,
     p: Flags,
-    mem: [u8; 0x10000],
+    mem: Mem,
     state: CpuState,
 }
 
-impl Default for Cpu {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Cpu {
-    pub fn new() -> Self {
+impl<Mem: Memory> Cpu<Mem> {
+    pub fn new(mem: Mem) -> Self {
         Self {
             a: 0,
             x: 0,
@@ -101,15 +97,20 @@ impl Cpu {
             pc: 0, // pc must be read at addresses 0xFFFC and 0xFFFD
             s: S_INIT_VALUE,
             p: Flags::from_bits_truncate(P_INIT_VALUE),
-            mem: [0; 0x10000],
+            mem,
             state: CpuState::FetchOpCode,
         }
     }
 
-    pub fn load(&mut self, address: u16, rom: &[u8]) {
-        let address = address as usize;
-        self.mem[address..address + rom.len()].copy_from_slice(rom);
-        self.write_mem_u16(RESET_VECTOR, address as u16);
+    pub fn write_reset(&mut self, address: u16) {
+        self.write_mem_u16(RESET_VECTOR, address);
+    }
+
+    pub fn reset(&mut self) {
+        // TODO initialize other registers
+        self.p = Flags::from_bits_truncate(P_INIT_VALUE);
+        self.pc = self.read_mem_u16(RESET_VECTOR);
+        self.state = CpuState::FetchOpCode;
     }
 
     pub fn tick(&mut self) {
@@ -408,36 +409,20 @@ impl Cpu {
         };
     }
 
-    pub fn reset(&mut self) {
-        // TODO initialize other registers
-        self.p = Flags::from_bits_truncate(P_INIT_VALUE);
-        self.pc = self.read_mem_u16(RESET_VECTOR);
-        self.state = CpuState::FetchOpCode;
-    }
-
     pub fn read_mem(&self, address: u16) -> u8 {
-        self.mem[address as usize]
+        self.mem.read(address)
     }
 
-    // FIXME: Can potentially panic, check address value.
     pub fn read_mem_u16(&self, address: u16) -> u16 {
-        let mut value = [0u8; 2];
-        let address = address as usize;
-        value.copy_from_slice(&self.mem[address..address + 2]);
-        u16::from_le_bytes(value)
+        self.mem.read_u16(address)
     }
 
     pub fn write_mem(&mut self, address: u16, value: u8) {
-        self.mem[address as usize] = value;
+        self.mem.write(address, value);
     }
 
     pub fn write_mem_u16(&mut self, address: u16, value: u16) {
-        let value = value.to_le_bytes();
-        let address = address as usize;
-        self.mem[address..address + 2]
-            .iter_mut()
-            .zip(value.iter())
-            .for_each(|(dest, src)| *dest = *src);
+        self.mem.write_u16(address, value)
     }
 
     #[cfg(test)]

@@ -1,3 +1,7 @@
 #![no_std]
 
-pub mod cpu;
+mod cpu;
+pub use cpu::*;
+
+mod memory;
+pub use memory::*;

@@ -1,4 +1,3 @@
-use nespa::cpu::Cpu;
 use rand::Rng;
 use sdl2::{
     event::Event,
@@ -8,8 +7,35 @@ use sdl2::{
 };
 use std::time::Duration;
 
-const ROM_START: u16 = 0x0600;
+const ROM_START: usize = 0x0600;
 const CYCLE_DURATION: Duration = Duration::from_nanos(24000);
+
+struct Buffer([u8; 0x10000]);
+
+impl nespa::Memory for Buffer {
+    fn read(&self, address: u16) -> u8 {
+        self.0[address as usize]
+    }
+
+    fn read_u16(&self, address: u16) -> u16 {
+        let lsb = self.read(address);
+        let msb = self.read(address + 1);
+        lsb as u16 | (msb as u16) << 8
+    }
+
+    fn write(&mut self, address: u16, value: u8) {
+        self.0[address as usize] = value;
+    }
+
+    fn write_u16(&mut self, address: u16, value: u16) {
+        let lsb = (value & 0xff) as u8; 
+        self.write(address, lsb);
+        let msb = (value >> 8) as u8;
+        self.write(address + 1, msb);
+    }
+}
+
+type Cpu = nespa::Cpu<Buffer>;
 
 fn color(byte: u8) -> Color {
     match byte {
@@ -122,16 +148,19 @@ fn main() {
         0x60, 0xa2, 0x00, 0xea, 0xea, 0xca, 0xd0, 0xfb, 0x60, 0x4c, 0x35, 0x07,
     ];
 
-    //load the game
-    let mut cpu = Cpu::new();
-    cpu.load(ROM_START, &game_code);
+    // set up the memory
+    let mut buffer: [u8; 0x10000] = [0; 0x10000];
+    buffer[ROM_START..ROM_START + game_code.len()].copy_from_slice(&game_code);
+
+    let mut cpu = Cpu::new(Buffer(buffer));
+    // setup the reset handler
+    cpu.write_reset(ROM_START as u16);
     cpu.reset();
 
     let mut screen_state = [0_u8; 32 * 3 * 32];
     let mut rng = rand::thread_rng();
 
     // run the game cycle
-
     loop {
         let start = std::time::Instant::now();
         cpu.tick();

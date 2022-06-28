@@ -1,10 +1,36 @@
 use super::*;
+use crate::memory::Memory;
 use core::iter;
 const RAM_CODE_START: u16 = 0x400;
 
-fn setup(instructions: &[u8]) -> Cpu {
-    let mut cpu = Cpu::new();
-    cpu.write_mem_u16(RESET_VECTOR, RAM_CODE_START);
+struct Buffer([u8; 0x10000]);
+
+impl Memory for Buffer {
+    fn read(&self, address: u16) -> u8 {
+        self.0[address as usize]
+    }
+
+    fn read_u16(&self, address: u16) -> u16 {
+        let lsb = self.read(address);
+        let msb = self.read(address + 1);
+        lsb as u16 | (msb as u16) << 8
+    }
+
+    fn write(&mut self, address: u16, value: u8) {
+        self.0[address as usize] = value;
+    }
+
+    fn write_u16(&mut self, address: u16, value: u16) {
+        let lsb = (value & 0xff) as u8;
+        self.write(address, lsb);
+        let msb = (value >> 8) as u8;
+        self.write(address + 1, msb);
+    }
+}
+
+fn setup(instructions: &[u8]) -> Cpu<Buffer> {
+    let mut cpu = Cpu::new(Buffer([0; 0x10000]));
+    cpu.write_reset(RAM_CODE_START);
     instructions
         .iter()
         .chain(iter::once(&0x69)) // just add a valid opcode for the test not to panic

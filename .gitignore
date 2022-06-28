@@ -1,2 +1,2 @@
 **/*.rs.bk
-/target
+**/target
