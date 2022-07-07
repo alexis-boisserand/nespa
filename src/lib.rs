@@ -5,3 +5,5 @@ pub use cpu::*;
 
 mod memory;
 pub use memory::*;
+
+mod cartridge;
